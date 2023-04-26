@@ -5,6 +5,7 @@ export default {
     onload: ({ extensionAPI }) => {
         // TODO: config for output as attributes
 
+        /*
         extensionAPI.ui.commandPalette.addCommand({
             label: "AOT - Alternatives, Possibilities, Choices",
             callback: () => {
@@ -19,6 +20,7 @@ export default {
                 }
             }
         });
+        */
         extensionAPI.ui.commandPalette.addCommand({
             label: "AOT - Assumptions X-ray",
             callback: () => {
@@ -137,6 +139,7 @@ export default {
                 }
             }
         });
+        /*
         extensionAPI.ui.commandPalette.addCommand({
             label: "AOT - Other People's Views",
             callback: () => {
@@ -151,6 +154,7 @@ export default {
                 }
             }
         });
+        */
         /*
         extensionAPI.ui.commandPalette.addCommand({
             label: "AOT - Pain Button",
@@ -305,15 +309,6 @@ export default {
                 return "";
             }
         };
-        const args5 = {
-            text: "AOTOPV",
-            help: "AOT - Other People's Views",
-            handler: (context) => () => {
-                let uid = context.currentUid;
-                aot_opv(uid);
-                return "";
-            }
-        };
         const args6 = {
             text: "AOTAX",
             help: "AOT - Assumptions X-Ray",
@@ -339,7 +334,6 @@ export default {
             window.roamjs.extension.smartblocks.registerCommand(args2);
             window.roamjs.extension.smartblocks.registerCommand(args3);
             window.roamjs.extension.smartblocks.registerCommand(args4);
-            window.roamjs.extension.smartblocks.registerCommand(args5);
             window.roamjs.extension.smartblocks.registerCommand(args6);
             window.roamjs.extension.smartblocks.registerCommand(args7);
         } else {
@@ -352,7 +346,6 @@ export default {
                     window.roamjs.extension.smartblocks.registerCommand(args2) &&
                     window.roamjs.extension.smartblocks.registerCommand(args3) &&
                     window.roamjs.extension.smartblocks.registerCommand(args4) &&
-                    window.roamjs.extension.smartblocks.registerCommand(args5) &&
                     window.roamjs.extension.smartblocks.registerCommand(args6) &&
                     window.roamjs.extension.smartblocks.registerCommand(args7)
             );
@@ -365,7 +358,7 @@ export default {
             window.roamjs.extension.smartblocks.unregisterCommand("AOTCHOICE");
             window.roamjs.extension.smartblocks.unregisterCommand("AOTDIFFERENCE");
             window.roamjs.extension.smartblocks.unregisterCommand("AOTNEXTACTION");
-            window.roamjs.extension.smartblocks.unregisterCommand("AOTOPV");
+            /*window.roamjs.extension.smartblocks.unregisterCommand("AOTOPV");*/
             window.roamjs.extension.smartblocks.unregisterCommand("AOTPMI");
             window.roamjs.extension.smartblocks.unregisterCommand("AOTWANT");
         };
@@ -1116,6 +1109,8 @@ async function aot_choice_decision(decUID, focusedWindow) {
         { location: { "block-uid": decUID1, "window-id": focusedWindow } })
     await prompt("Look over your constraints and options, make your decision and record it here.", 4, "Simple Choice:", null, 4000);
 }
+
+// TOSCA functions
 
 // Want, Impediment, Remedy functions - COMPLETE
 async function aot_wir(uid) {
