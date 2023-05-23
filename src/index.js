@@ -5,7 +5,41 @@ export default {
     onload: ({ extensionAPI }) => {
         // TODO: config for output as attributes
 
+        // https://www.zsolt.blog/2020/12/de-bonos-algorithms-of-thought-for_8.html
+        extensionAPI.ui.commandPalette.addCommand({
+            label: "AOT - Agreement, Disagreement and Irrelevance",
+            callback: () => {
+                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
+                if (uid == undefined) {
+                    alert("Please make sure to focus a block before starting an AOT");
+                    return;
+                } else {
+                    window.roamAlphaAPI.updateBlock(
+                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
+                    aot_adi(uid);
+                }
+            }
+        });
+
         /*
+        // https://www.debono.com/de-bono-thinking-lessons-1/4.-AGO-lesson-plan
+        extensionAPI.ui.commandPalette.addCommand({
+            label: "AOT - Aims, Goals, Objectives",
+            callback: () => {
+                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
+                if (uid == undefined) {
+                    alert("Please make sure to focus a block before starting an AOT");
+                    return;
+                } else {
+                    window.roamAlphaAPI.updateBlock(
+                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
+                    aot_ago(uid);
+                }
+            }
+        });
+        */
+        /*
+        // https://www.debono.com/de-bono-thinking-lessons-1/6.-APC-lesson-plan
         extensionAPI.ui.commandPalette.addCommand({
             label: "AOT - Alternatives, Possibilities, Choices",
             callback: () => {
@@ -64,6 +98,7 @@ export default {
             }
         });
         /*
+        // https://www.debono.com/de-bono-thinking-lessons-1/3.-C%26S-lesson-plan
         extensionAPI.ui.commandPalette.addCommand({
             label: "AOT - Consequence and Sequel",
             callback: () => {
@@ -80,6 +115,7 @@ export default {
         });
         */
         /*
+        // https://www.debono.com/de-bono-thinking-lessons-1/2.-CAF-lesson-plan
         extensionAPI.ui.commandPalette.addCommand({
             label: "AOT - Consider All Factors",
             callback: () => {
@@ -92,6 +128,22 @@ export default {
                         { block: { uid: uid, string: "Loading...".toString(), open: true } });
                 }
                 aot_caf(uid);
+            }
+        });
+        */
+        /*
+        extensionAPI.ui.commandPalette.addCommand({
+            label: "AOT - Design/Decision, Outcome, Channels, Action",
+            callback: () => {
+                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
+                if (uid == undefined) {
+                    alert("Please make sure to focus a block before starting an AOT");
+                    return;
+                } else {
+                    window.roamAlphaAPI.updateBlock(
+                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
+                }
+                aot_doca(uid);
             }
         });
         */
@@ -109,6 +161,55 @@ export default {
                 }
             }
         });
+        /*
+        // https://www.zsolt.blog/2020/12/de-bonos-algorithms-of-thought-for_8.html
+        extensionAPI.ui.commandPalette.addCommand({
+            label: "AOT - Examine Both Sides",
+            callback: () => {
+                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
+                if (uid == undefined) {
+                    alert("Please make sure to focus a block before starting an AOT");
+                    return;
+                } else {
+                    window.roamAlphaAPI.updateBlock(
+                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
+                }
+                aot_ebs(uid);
+            }
+        });
+        */
+        /*
+        extensionAPI.ui.commandPalette.addCommand({
+            label: "AOT - First Important Priorities",
+            callback: () => {
+                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
+                if (uid == undefined) {
+                    alert("Please make sure to focus a block before starting an AOT");
+                    return;
+                } else {
+                    window.roamAlphaAPI.updateBlock(
+                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
+                }
+                aot_fip(uid);
+            }
+        });
+        */
+        /*
+        extensionAPI.ui.commandPalette.addCommand({
+            label: "AOT - Five Whys",
+            callback: () => {
+                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
+                if (uid == undefined) {
+                    alert("Please make sure to focus a block before starting an AOT");
+                    return;
+                } else {
+                    window.roamAlphaAPI.updateBlock(
+                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
+                }
+                aot_fw(uid);
+            }
+        });
+        */
         /*
         extensionAPI.ui.commandPalette.addCommand({
             label: "AOT - Issue Log",
@@ -140,6 +241,7 @@ export default {
             }
         });
         /*
+        // https://www.debono.com/de-bono-thinking-lessons-1/7.-OPV-lesson-plan
         extensionAPI.ui.commandPalette.addCommand({
             label: "AOT - Other People's Views",
             callback: () => {
@@ -219,6 +321,22 @@ export default {
         */
         /*
         extensionAPI.ui.commandPalette.addCommand({
+            label: "AOT - Recognise, Analyse, Divide",
+            callback: () => {
+                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
+                if (uid == undefined) {
+                    alert("Please make sure to focus a block before starting an AOT");
+                    return;
+                } else {
+                    window.roamAlphaAPI.updateBlock(
+                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
+                }
+                aot_rad(uid);
+            }
+        });
+        */
+        /*
+        extensionAPI.ui.commandPalette.addCommand({
             label: "AOT - Regret Minimisation",
             callback: () => {
                 const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
@@ -249,6 +367,38 @@ export default {
             }
         });
         */
+        /*
+        extensionAPI.ui.commandPalette.addCommand({
+            label: "AOT - SWOT analysis",
+            callback: () => {
+                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
+                if (uid == undefined) {
+                    alert("Please make sure to focus a block before starting an AOT");
+                    return;
+                } else {
+                    window.roamAlphaAPI.updateBlock(
+                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
+                }
+                aot_swot(uid);
+            }
+        });
+        */
+
+        // https://www.zsolt.blog/2020/12/tosca-pattern-for-framing-problems.html
+        extensionAPI.ui.commandPalette.addCommand({
+            label: "AOT - TOSCA",
+            callback: () => {
+                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
+                if (uid == undefined) {
+                    alert("Please make sure to focus a block before starting an AOT");
+                    return;
+                } else {
+                    window.roamAlphaAPI.updateBlock(
+                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
+                }
+                aot_tosca(uid);
+            }
+        });
         extensionAPI.ui.commandPalette.addCommand({
             label: "AOT - Want, Impediment, Remedy",
             callback: () => {
@@ -309,6 +459,15 @@ export default {
                 return "";
             }
         };
+        const args5 = {
+            text: "AOTTOSCA",
+            help: "AOT - TOSCA",
+            handler: (context) => () => {
+                let uid = context.currentUid;
+                aot_tosca(uid);
+                return "";
+            }
+        };
         const args6 = {
             text: "AOTAX",
             help: "AOT - Assumptions X-Ray",
@@ -327,6 +486,15 @@ export default {
                 return "";
             }
         };
+        const args8 = {
+            text: "AOTADI",
+            help: "AOT - Agreement, Disagreement and Irrelevance",
+            handler: (context) => () => {
+                let uid = context.currentUid;
+                aot_adi(uid);
+                return "";
+            }
+        };
 
         if (window.roamjs?.extension?.smartblocks) {
             window.roamjs.extension.smartblocks.registerCommand(args);
@@ -334,8 +502,10 @@ export default {
             window.roamjs.extension.smartblocks.registerCommand(args2);
             window.roamjs.extension.smartblocks.registerCommand(args3);
             window.roamjs.extension.smartblocks.registerCommand(args4);
+            window.roamjs.extension.smartblocks.registerCommand(args5);
             window.roamjs.extension.smartblocks.registerCommand(args6);
             window.roamjs.extension.smartblocks.registerCommand(args7);
+            window.roamjs.extension.smartblocks.registerCommand(args8);
         } else {
             document.body.addEventListener(
                 `roamjs:smartblocks:loaded`,
@@ -346,13 +516,16 @@ export default {
                     window.roamjs.extension.smartblocks.registerCommand(args2) &&
                     window.roamjs.extension.smartblocks.registerCommand(args3) &&
                     window.roamjs.extension.smartblocks.registerCommand(args4) &&
+                    window.roamjs.extension.smartblocks.registerCommand(args5) &&
                     window.roamjs.extension.smartblocks.registerCommand(args6) &&
-                    window.roamjs.extension.smartblocks.registerCommand(args7)
+                    window.roamjs.extension.smartblocks.registerCommand(args7) &&
+                    window.roamjs.extension.smartblocks.registerCommand(args8)
             );
         }
     },
     onunload: () => {
         if (window.roamjs?.extension?.smartblocks) {
+            window.roamjs.extension.smartblocks.unregisterCommand("AOTADI");
             window.roamjs.extension.smartblocks.unregisterCommand("AOTAX");
             window.roamjs.extension.smartblocks.unregisterCommand("AOTBASICDECISION");
             window.roamjs.extension.smartblocks.unregisterCommand("AOTCHOICE");
@@ -360,8 +533,102 @@ export default {
             window.roamjs.extension.smartblocks.unregisterCommand("AOTNEXTACTION");
             /*window.roamjs.extension.smartblocks.unregisterCommand("AOTOPV");*/
             window.roamjs.extension.smartblocks.unregisterCommand("AOTPMI");
+            window.roamjs.extension.smartblocks.unregisterCommand("AOTTOSCA");
             window.roamjs.extension.smartblocks.unregisterCommand("AOTWANT");
         };
+    }
+}
+// Agreement, Disagreement and Irrelevance - COMPLETE
+async function aot_adi(uid) {
+    var header = "**Situation:**";
+    await window.roamAlphaAPI.updateBlock(
+        { block: { uid: uid, string: "" + header + "".toString(), open: true } });
+
+    let situationString = "What is the situation you wish to analyse?";
+    let situation = await prompt(situationString, 1, "Agreement, Disagreement and Irrelevance");
+    var situationBlock1 = window.roamAlphaAPI.util.generateUID();
+    await window.roamAlphaAPI.createBlock({
+        location: { "parent-uid": uid, order: 0 },
+        block: { string: situation.toString(), uid: situationBlock1 }
+    });
+
+    var agreeBlock = window.roamAlphaAPI.util.generateUID();
+    await window.roamAlphaAPI.createBlock({
+        location: { "parent-uid": uid, order: 1 },
+        block: { string: "**Agreement:**".toString(), uid: agreeBlock }
+    });
+
+    aot_adi_agree(uid, agreeBlock);
+}
+async function aot_adi_agree(uid, agreeBlock) {
+    let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${agreeBlock}"] ]`);
+    var order = 0;
+    if (existingItems[0][0].hasOwnProperty("children")) {
+        order = existingItems[0][0].children.length;
+    }
+
+    let agree = await prompt("What is something about this situation on which you agree?", 1, "Agreement, Disagreement and Irrelevance");
+    var agreeBlock1 = window.roamAlphaAPI.util.generateUID();
+    await window.roamAlphaAPI.createBlock({
+        location: { "parent-uid": agreeBlock, order: order },
+        block: { string: agree.toString(), uid: agreeBlock1 }
+    });
+
+    let more = await prompt("Are there any other things on which you agree?", 3, "Agreement, Disagreement and Irrelevance", null);
+    if (more == "yes") {
+        aot_adi_agree(uid, agreeBlock);
+    } else if (more == "no") {
+        var disagreeBlock = window.roamAlphaAPI.util.generateUID();    
+        await window.roamAlphaAPI.createBlock({
+            location: { "parent-uid": uid, order: 2 },
+            block: { string: "**Disagreement:**".toString(), uid: disagreeBlock }
+        });
+        aot_adi_disagree(uid, disagreeBlock);
+    }
+}
+async function aot_adi_disagree(uid, disagreeBlock) {
+    let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${disagreeBlock}"] ]`);
+    var order = 0;
+    if (existingItems[0][0].hasOwnProperty("children")) {
+        order = existingItems[0][0].children.length;
+    }
+
+    let disagree = await prompt("What is something about this situation on which you disagree?", 1, "Agreement, Disagreement and Irrelevance");
+    var disagreeBlock1 = window.roamAlphaAPI.util.generateUID();
+    await window.roamAlphaAPI.createBlock({
+        location: { "parent-uid": disagreeBlock, order: order },
+        block: { string: disagree.toString(), uid: disagreeBlock1 }
+    });
+
+    let more = await prompt("Are there any other things on which you disagree?", 3, "Agreement, Disagreement and Irrelevance", null);
+    if (more == "yes") {
+        aot_adi_disagree(uid, disagreeBlock);
+    } else if (more == "no") {
+        var irrBlock = window.roamAlphaAPI.util.generateUID();    
+        await window.roamAlphaAPI.createBlock({
+            location: { "parent-uid": uid, order: 3 },
+            block: { string: "**Irrelevance:**".toString(), uid: irrBlock }
+        });
+        aot_adi_irr(uid, irrBlock);
+    }
+}
+async function aot_adi_irr(uid, irrBlock) {
+    let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${irrBlock}"] ]`);
+    var order = 0;
+    if (existingItems[0][0].hasOwnProperty("children")) {
+        order = existingItems[0][0].children.length;
+    }
+
+    let irrelevant = await prompt("What is something about your disagreement that is irrelevant?", 1, "Agreement, Disagreement and Irrelevance");
+    var irrelevant1 = window.roamAlphaAPI.util.generateUID();
+    await window.roamAlphaAPI.createBlock({
+        location: { "parent-uid": irrBlock, order: order },
+        block: { string: irrelevant.toString(), uid: irrelevant1 }
+    });
+
+    let more = await prompt("Are there any other things that have been brought up that are irrelevant?", 3, "Agreement, Disagreement and Irrelevance", null);
+    if (more == "yes") {
+        aot_adi_irr(uid, irrBlock);
     }
 }
 
@@ -552,7 +819,6 @@ async function aot_bd(uid) {
 
     aot_bd_option(uid, optionsBlock, 1);
 }
-
 async function aot_bd_option(uid, optionsBlock, optionNumber) {
     var optionString;
     if (optionNumber == 1) {
@@ -605,7 +871,6 @@ async function aot_bd_option(uid, optionsBlock, optionNumber) {
         aot_bd_constraints(uid, constraintsBlock, 1);
     }
 }
-
 async function aot_bd_constraints(uid, constraintsBlock, contstraintsNumber) {
     let constraints = await prompt("What is a constraint on this decision?", 1, "Constraint");
 
@@ -623,7 +888,6 @@ async function aot_bd_constraints(uid, constraintsBlock, contstraintsNumber) {
         aot_bd_finish(uid);
     }
 }
-
 async function aot_bd_finish(uid) {
     await prompt("Look over your options and consider if there are more advantages or disadvantages to add. Then, consider your constraints. Finally, record your decision!", 4, "Decision Time", null, 8000);
     var decisionBlock = window.roamAlphaAPI.util.generateUID();
@@ -685,7 +949,6 @@ async function aot_de(uid) {
 
     aot_de_dif(uid, difUID);
 }
-
 async function aot_de_dif(uid, difUID) {
     let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${difUID}"] ]`);
     var order = 0;
@@ -707,7 +970,6 @@ async function aot_de_dif(uid, difUID) {
         aot_de_serious(uid, difUID);
     }
 }
-
 async function aot_de_serious(uid, difUID) {
     let differences = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${difUID}"] ]`);
 
@@ -740,7 +1002,6 @@ async function aot_de_serious(uid, difUID) {
         aot_de_mitigate(uid, mitUID);
     }
 }
-
 async function aot_de_mitigate(uid, mitUID) {
     let mitigating = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${mitUID}"] ]`);
     var order = 0;
@@ -762,6 +1023,8 @@ async function aot_de_mitigate(uid, mitUID) {
         return;
     }
 }
+
+// First Important Priorities
 
 // Issue Log functions
 
@@ -785,7 +1048,6 @@ async function aot_na(uid) {
         aot_na_no(uid, brainstormingBlock, 1);
     }
 }
-
 async function aot_na_no(uid, brainstormingBlock, bsCount) {
     let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${brainstormingBlock}"] ]`);
     var order = 0;
@@ -810,14 +1072,12 @@ async function aot_na_no(uid, brainstormingBlock, bsCount) {
         aot_na_no(uid, brainstormingBlock, bsCount);
     }
 }
-
 async function aot_na_yes(uid, order) {
     let string = "What's the very next action?";
     let na = await prompt(string, 1, "Next Action");
     var naBlock = window.roamAlphaAPI.util.generateUID();
     aot_na_sim(uid, 1, na, naBlock);
 }
-
 async function aot_na_sim(uid, order, na, naBlock) {
     let string = "Now mentally simulate doing this action - " + na + ". Can you do it right now?";
     let na_now = await prompt(string, 3, "Next Action");
@@ -830,7 +1090,6 @@ async function aot_na_sim(uid, order, na, naBlock) {
         });
     }
 }
-
 async function aot_na_blocking(uid, order, na, naBlock) {
     let string = "Create any other tasks you need to complete";
     let nablocking = await prompt(string, 1, "Next Action");
@@ -870,7 +1129,6 @@ async function aot_opv(uid) {
     });
     aot_opv_people(uid, peopleUID);
 }
-
 async function aot_opv_people(uid, peopleUID) {
     let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${peopleUID}"] ]`);
     var order = 0;
@@ -892,7 +1150,6 @@ async function aot_opv_people(uid, peopleUID) {
         aot_opv_views(uid, peopleUID);
     }
 }
-
 async function aot_opv_views(uid, peopleUID) {
     let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${peopleUID}"] ]`);
 
@@ -942,7 +1199,6 @@ async function aot_pmi(uid) {
     });
     aot_pmi_plus(uid, plusUID);
 }
-
 async function aot_pmi_plus(uid, plusUID) {
     let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${plusUID}"] ]`);
     var order = 0;
@@ -969,7 +1225,6 @@ async function aot_pmi_plus(uid, plusUID) {
         aot_pmi_minus(uid, minusUID);
     }
 }
-
 async function aot_pmi_minus(uid, minusUID) {
     let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${minusUID}"] ]`);
     var order = 0;
@@ -996,7 +1251,6 @@ async function aot_pmi_minus(uid, minusUID) {
         aot_pmi_int(uid, intUID);
     }
 }
-
 async function aot_pmi_int(uid, intUID) {
     let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${intUID}"] ]`);
     var order = 0;
@@ -1043,7 +1297,6 @@ async function aot_choice(uid) {
     });
     aot_choice_constraints(uid, newuid, focusedWindow);
 }
-
 async function aot_choice_constraints(uid, newuid, focusedWindow) {
     let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${newuid}"] ]`);
     var order = 0;
@@ -1070,7 +1323,6 @@ async function aot_choice_constraints(uid, newuid, focusedWindow) {
         aot_choice_options(uid, optUID, focusedWindow);
     }
 }
-
 async function aot_choice_options(uid, optUID, focusedWindow) {
     let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${optUID}"] ]`);
     var order = 0;
@@ -1097,7 +1349,6 @@ async function aot_choice_options(uid, optUID, focusedWindow) {
         aot_choice_decision(decUID, focusedWindow);
     }
 }
-
 async function aot_choice_decision(decUID, focusedWindow) {
     var decUID1 = window.roamAlphaAPI.util.generateUID();
     await window.roamAlphaAPI.createBlock({
@@ -1110,7 +1361,91 @@ async function aot_choice_decision(decUID, focusedWindow) {
     await prompt("Look over your constraints and options, make your decision and record it here.", 4, "Simple Choice:", null, 4000);
 }
 
-// TOSCA functions
+// TOSCA functions - complete
+async function aot_tosca(uid) {
+    await sleep(20);
+    await window.roamAlphaAPI.updateBlock(
+        { block: { uid: uid, string: "**TOSCA:**", open: true } });
+
+    let trouble = await prompt("What are the symptoms that make this problem real and present? Be specific. Avoid interpretation or solution ideas. Ask: \"Why now?\"", 1, "TOSCA");
+    var troubleUID = window.roamAlphaAPI.util.generateUID();
+    await window.roamAlphaAPI.createBlock({
+        location: { "parent-uid": uid, order: 0 },
+        block: { string: "Trouble: ", uid: troubleUID }
+    });
+    var troubleUID1 = window.roamAlphaAPI.util.generateUID();
+    await window.roamAlphaAPI.createBlock({
+        location: { "parent-uid": troubleUID, order: 0 },
+        block: { string: trouble.toString(), uid: troubleUID1 }
+    });
+
+    let owner = await prompt("Whose problem is this?", 1, "TOSCA");
+    var ownerUID = window.roamAlphaAPI.util.generateUID();
+    await window.roamAlphaAPI.createBlock({
+        location: { "parent-uid": uid, order: 1 },
+        block: { string: "Owner: ", uid: ownerUID }
+    });
+    var ownerUID1 = window.roamAlphaAPI.util.generateUID();
+    await window.roamAlphaAPI.createBlock({
+        location: { "parent-uid": ownerUID, order: 0 },
+        block: { string: owner.toString(), uid: ownerUID1 }
+    });
+
+    let sc = await prompt("What will success look like, and by when? Include a quantified target if possible.", 1, "TOSCA");
+    var scUID = window.roamAlphaAPI.util.generateUID();
+    await window.roamAlphaAPI.createBlock({
+        location: { "parent-uid": uid, order: 2 },
+        block: { string: "Success Criteria: ", uid: scUID }
+    });
+    var scUID1 = window.roamAlphaAPI.util.generateUID();
+    await window.roamAlphaAPI.createBlock({
+        location: { "parent-uid": scUID, order: 0 },
+        block: { string: sc.toString(), uid: scUID1 }
+    });
+
+    var actorsUID = window.roamAlphaAPI.util.generateUID();
+    await window.roamAlphaAPI.createBlock({
+        location: { "parent-uid": uid, order: 3 },
+        block: { string: "Actors: ", uid: actorsUID }
+    });
+
+    aot_tosca_actors(uid, actorsUID)
+}
+async function aot_tosca_actors(uid, actorsUID) {
+    let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${actorsUID}"] ]`);
+    var order = 0;
+    if (existingItems[0][0].hasOwnProperty("children")) {
+        order = existingItems[0][0].children.length;
+    }
+
+    let actors = await prompt("Which other stakeholders have a say, and what do they want?", 1, "TOSCA");
+    var actorsUID1 = window.roamAlphaAPI.util.generateUID();
+    await window.roamAlphaAPI.createBlock({
+        location: { "parent-uid": actorsUID, order: order },
+        block: { string: actors.toString(), uid: actorsUID1 }
+    });
+
+    let more = await prompt("Are there any other stakeholders?", 3, "TOSCA", null);
+    if (more == "yes") {
+        aot_tosca_actors(uid, actorsUID);
+    } else if (more == "no") {
+        aot_tosca_coreQ(uid);
+    }
+}
+async function aot_tosca_coreQ(uid) {
+    let coreQ = await prompt("Now that you've considered the TOSCA items, what is the Core Question?", 1, "TOSCA");
+    var coreQUID = window.roamAlphaAPI.util.generateUID();
+    await window.roamAlphaAPI.createBlock({
+        location: { "parent-uid": uid, order: 4 },
+        block: { string: "**Core Question:**", uid: coreQUID }
+    });
+    
+    var coreQUID1 = window.roamAlphaAPI.util.generateUID();
+    await window.roamAlphaAPI.createBlock({
+        location: { "parent-uid": coreQUID, order: 0 },
+        block: { string: coreQ.toString(), uid: coreQUID1 }
+    });    
+}
 
 // Want, Impediment, Remedy functions - COMPLETE
 async function aot_wir(uid) {
@@ -1124,7 +1459,6 @@ async function aot_wir(uid) {
     let array = []
     aot_wir_impediment(uid, array);
 }
-
 async function aot_wir_impediment(uid, array) {
     let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${uid}"] ]`);
     var order = 0;
@@ -1152,7 +1486,6 @@ async function aot_wir_impediment(uid, array) {
         aot_wir_finish(uid, order, array);
     }
 }
-
 async function aot_wir_finish(uid, order, array) {
     order = order + 1;
     var actUID = window.roamAlphaAPI.util.generateUID();
