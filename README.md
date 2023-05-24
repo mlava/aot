@@ -2,8 +2,10 @@ At the dawn of time, there was a lot of fuss about using Roam Research to augmen
 
 Available Algorithms of Thought (AOT):
 - Agreement, Disagreement and Irrelevance
+- Alternatives, Possibilities, Choices
 - Assumptions X-Ray
 - Basic Decision
+- Consider All Factors
 - Difference Engine
 - Next Action
 - Simple Choice
@@ -12,9 +14,7 @@ Available Algorithms of Thought (AOT):
 - Want, Impediment, Remedy
 
 Coming Soon:
-- Alternatives, Possibilities, Choices
 - Consequence and Sequel
-- Consider All Factors
 - First Important Priorities
 - Issue Log
 - Other People's Views
