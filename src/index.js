@@ -38,7 +38,6 @@ export default {
             }
         });
         */
-        /*
         // https://www.debono.com/de-bono-thinking-lessons-1/6.-APC-lesson-plan
         extensionAPI.ui.commandPalette.addCommand({
             label: "AOT - Alternatives, Possibilities, Choices",
@@ -54,7 +53,6 @@ export default {
                 }
             }
         });
-        */
         extensionAPI.ui.commandPalette.addCommand({
             label: "AOT - Assumptions X-ray",
             callback: () => {
@@ -114,7 +112,6 @@ export default {
             }
         });
         */
-        /*
         // https://www.debono.com/de-bono-thinking-lessons-1/2.-CAF-lesson-plan
         extensionAPI.ui.commandPalette.addCommand({
             label: "AOT - Consider All Factors",
@@ -130,7 +127,6 @@ export default {
                 aot_caf(uid);
             }
         });
-        */
         /*
         extensionAPI.ui.commandPalette.addCommand({
             label: "AOT - Design/Decision, Outcome, Channels, Action",
@@ -495,7 +491,25 @@ export default {
                 return "";
             }
         };
-
+        const args9 = {
+            text: "AOTAPC",
+            help: "AOT - Alternatives, Possibilities, Choices",
+            handler: (context) => () => {
+                let uid = context.currentUid;
+                aot_apc(uid);
+                return "";
+            }
+        };
+        const args10 = {
+            text: "AOTCAF",
+            help: "AOT - Consider All Factors",
+            handler: (context) => () => {
+                let uid = context.currentUid;
+                aot_caf(uid);
+                return "";
+            }
+        };
+        
         if (window.roamjs?.extension?.smartblocks) {
             window.roamjs.extension.smartblocks.registerCommand(args);
             window.roamjs.extension.smartblocks.registerCommand(args1);
@@ -506,6 +520,8 @@ export default {
             window.roamjs.extension.smartblocks.registerCommand(args6);
             window.roamjs.extension.smartblocks.registerCommand(args7);
             window.roamjs.extension.smartblocks.registerCommand(args8);
+            window.roamjs.extension.smartblocks.registerCommand(args9);
+            window.roamjs.extension.smartblocks.registerCommand(args10);
         } else {
             document.body.addEventListener(
                 `roamjs:smartblocks:loaded`,
@@ -519,15 +535,19 @@ export default {
                     window.roamjs.extension.smartblocks.registerCommand(args5) &&
                     window.roamjs.extension.smartblocks.registerCommand(args6) &&
                     window.roamjs.extension.smartblocks.registerCommand(args7) &&
-                    window.roamjs.extension.smartblocks.registerCommand(args8)
+                    window.roamjs.extension.smartblocks.registerCommand(args8) &&
+                    window.roamjs.extension.smartblocks.registerCommand(args9) &&
+                    window.roamjs.extension.smartblocks.registerCommand(args10)
             );
         }
     },
     onunload: () => {
         if (window.roamjs?.extension?.smartblocks) {
             window.roamjs.extension.smartblocks.unregisterCommand("AOTADI");
+            window.roamjs.extension.smartblocks.unregisterCommand("AOTAPC");
             window.roamjs.extension.smartblocks.unregisterCommand("AOTAX");
             window.roamjs.extension.smartblocks.unregisterCommand("AOTBASICDECISION");
+            window.roamjs.extension.smartblocks.unregisterCommand("AOTCAF");
             window.roamjs.extension.smartblocks.unregisterCommand("AOTCHOICE");
             window.roamjs.extension.smartblocks.unregisterCommand("AOTDIFFERENCE");
             window.roamjs.extension.smartblocks.unregisterCommand("AOTNEXTACTION");
@@ -578,7 +598,7 @@ async function aot_adi_agree(uid, agreeBlock) {
     if (more == "yes") {
         aot_adi_agree(uid, agreeBlock);
     } else if (more == "no") {
-        var disagreeBlock = window.roamAlphaAPI.util.generateUID();    
+        var disagreeBlock = window.roamAlphaAPI.util.generateUID();
         await window.roamAlphaAPI.createBlock({
             location: { "parent-uid": uid, order: 2 },
             block: { string: "**Disagreement:**".toString(), uid: disagreeBlock }
@@ -604,7 +624,7 @@ async function aot_adi_disagree(uid, disagreeBlock) {
     if (more == "yes") {
         aot_adi_disagree(uid, disagreeBlock);
     } else if (more == "no") {
-        var irrBlock = window.roamAlphaAPI.util.generateUID();    
+        var irrBlock = window.roamAlphaAPI.util.generateUID();
         await window.roamAlphaAPI.createBlock({
             location: { "parent-uid": uid, order: 3 },
             block: { string: "**Irrelevance:**".toString(), uid: irrBlock }
@@ -632,7 +652,47 @@ async function aot_adi_irr(uid, irrBlock) {
     }
 }
 
-// Alternatives, Possibilities, Choices
+// Alternatives, Possibilities, Choices - COMPLETE
+async function aot_apc(uid) {
+    var header = "**Situation:**";
+    await window.roamAlphaAPI.updateBlock(
+        { block: { uid: uid, string: "" + header + "".toString(), open: true } });
+
+    let situationString = "What is the situation you wish to consider?";
+    let situation = await prompt(situationString, 1, "Alternatives, Possibilities, Choices");
+    var situationBlock1 = window.roamAlphaAPI.util.generateUID();
+    await window.roamAlphaAPI.createBlock({
+        location: { "parent-uid": uid, order: 0 },
+        block: { string: situation.toString(), uid: situationBlock1 }
+    });
+
+    var apcBlock = window.roamAlphaAPI.util.generateUID();
+    await window.roamAlphaAPI.createBlock({
+        location: { "parent-uid": uid, order: 1 },
+        block: { string: "**Alternatives, Possibilities, Choices:**".toString(), uid: apcBlock }
+    });
+
+    aot_apc_apc(uid, apcBlock);
+}
+async function aot_apc_apc(uid, apcBlock) {
+    let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${apcBlock}"] ]`);
+    var order = 0;
+    if (existingItems[0][0].hasOwnProperty("children")) {
+        order = existingItems[0][0].children.length;
+    }
+
+    let apc = await prompt("What is one way to consider this situation?", 1, "Alternatives, Possibilities, Choices")
+    var apcUID = window.roamAlphaAPI.util.generateUID();
+    await window.roamAlphaAPI.createBlock({
+        location: { "parent-uid": apcBlock, order: order },
+        block: { string: apc.toString(), uid: apcUID }
+    });
+
+    let more = await prompt("Are there alternative ways to consider this?", 3, "Alternatives, Possibilities, Choices", null);
+    if (more == "yes") {
+        aot_apc_apc(uid, apcBlock);
+    }
+}
 
 // Assumptions X-ray - COMPLETE
 async function aot_ax(uid) {
@@ -908,6 +968,46 @@ async function aot_bd_finish(uid) {
 // Consequence and Sequel functions
 
 // Consider All Factors functions
+async function aot_caf(uid) {
+    var header = "**Situation:**";
+    await window.roamAlphaAPI.updateBlock(
+        { block: { uid: uid, string: "" + header + "".toString(), open: true } });
+
+    let situationString = "What is the situation you wish to consider?";
+    let situation = await prompt(situationString, 1, "Consider All Factors");
+    var situationBlock1 = window.roamAlphaAPI.util.generateUID();
+    await window.roamAlphaAPI.createBlock({
+        location: { "parent-uid": uid, order: 0 },
+        block: { string: situation.toString(), uid: situationBlock1 }
+    });
+
+    var cafBlock = window.roamAlphaAPI.util.generateUID();
+    await window.roamAlphaAPI.createBlock({
+        location: { "parent-uid": uid, order: 1 },
+        block: { string: "**Factors to Consider:**".toString(), uid: cafBlock }
+    });
+
+    aot_caf_factors(uid, cafBlock);
+}
+async function aot_caf_factors(uid, cafBlock) {
+    let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${cafBlock}"] ]`);
+    var order = 0;
+    if (existingItems[0][0].hasOwnProperty("children")) {
+        order = existingItems[0][0].children.length;
+    }
+
+    let caf = await prompt("What is one factor you should consider?", 1, "Consider All Factors")
+    var cafUID = window.roamAlphaAPI.util.generateUID();
+    await window.roamAlphaAPI.createBlock({
+        location: { "parent-uid": cafBlock, order: order },
+        block: { string: caf.toString(), uid: cafUID }
+    });
+
+    let more = await prompt("Are there other factors you need to consider?", 3, "Consider All Factors", null);
+    if (more == "yes") {
+        aot_caf_factors(uid, cafBlock);
+    }
+}
 
 // Difference Engine functions - COMPLETE
 async function aot_de(uid) {
@@ -1439,12 +1539,12 @@ async function aot_tosca_coreQ(uid) {
         location: { "parent-uid": uid, order: 4 },
         block: { string: "**Core Question:**", uid: coreQUID }
     });
-    
+
     var coreQUID1 = window.roamAlphaAPI.util.generateUID();
     await window.roamAlphaAPI.createBlock({
         location: { "parent-uid": coreQUID, order: 0 },
         block: { string: coreQ.toString(), uid: coreQUID1 }
-    });    
+    });
 }
 
 // Want, Impediment, Remedy functions - COMPLETE
