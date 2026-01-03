@@ -145,7 +145,7 @@ Below is the full set of available AOTs, grouped by what kind of thinking they s
 
 ### 📚 Source Analysis & Appraisal
 - **REALLY?**
-  - A fast, structured scepticism checklist for evaluating claims, studies, statistics, or persuasive arguments. Designed to trigger epistemic discomfort early, before weak or misleading results are accepted.
+  - A fast, structured checklist for evaluating claims, studies, statistics, or persuasive arguments. Designed to trigger epistemic discomfort early, before weak or misleading results are accepted.
   - `<%AOTREALLY%>`
 - **REAPPRAISED Checklist**
   - A structured checklist for critically appraising sources, arguments, or bodies of evidence (e.g. articles, claims, proposals). Particularly useful for academic reading, policy documents, and persuasive writing.
@@ -222,7 +222,7 @@ Use these when the problem is understood but progress is stuck:
 
 Use this when the task is *appraisal, not decision*:
 
-- **REALLY?** – fast scepticism check
+- **REALLY?** – fast claim appraisal
 - **REAPPRAISED Checklist** – systematic source and evidence evaluation
 
 A Useful Rule of Thumb:
