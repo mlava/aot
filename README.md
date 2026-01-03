@@ -1,90 +1,130 @@
-At the dawn of time, there was a lot of fuss about using Roam Research to augment thinking and decision-making with semi-automated algorithms of thought. Now, they are available via your Command Palette or RR Hotkeys.
 
-**NEW:**
-- drastically rewritten for robustness and safety
-- added 14 new AOTs:
-  - Aims, Goals, Objectives
-  - Consequence and Sequel
-  - Design/Decision, Outcome, Channels, Action (DODCA)
-  - Examine Both Sides
-  - First Important Priorities
-  - Five Whys
-  - Pain Button (Ray Dalio)
-  - Recognise, Analyse, Divide
-  - REALLY?
-  - REAPPRAISED checklist
-  - Regret Minimisation
-  - Right to Disagree (Cortex Futura)
-  - Right to Disagree (Deeper Version)
-  - Six Thinking Hats
-  - SWOT Analysis
+# Algorithms of Thought (AOT) for Roam Research
 
-All of the Algorithms can be accessed by the Command Palette and Roam Research hotkeys can be assigned. Further, you can trigger using SmartBlocks flows using the SmartBlock command listed below each item in the list below.
+Algorithms of Thought (AOT) is a Roam Research extension that provides **structured thinking scaffolds** — lightweight, repeatable prompts that help you reason more clearly about decisions, problems, trade-offs, and next actions.
 
-The full list of available Algorithms of Thought (AOT) includes:
-- Aims, Goals, Objectives
-  - SmartBlocks command: <%AOTAGO%>
-- Agreement, Disagreement and Irrelevance
-  - SmartBlocks command: <%AOTADI%>
-- Alternatives, Possibilities, Choices
-  - SmartBlocks command: <%AOTAPC%>
-- Assumptions X-Ray
-  - SmartBlocks command: <%AOTAX%>
-- Basic Decision
-  - SmartBlocks command: <%AOTBASICDECISION%>
-- Consequence and Sequel
-  - SmartBlocks command: <%AOTCS%>
-- Consider All Factors
-  - SmartBlocks command: <%AOTCAF%>
-- Design/Decision, Outcome, Channels, Action (DODCA)
-  - SmartBlocks command: <%AOTDODCA%>
-- Difference Engine
-  - SmartBlocks command: <%AOTDIFFERENCE%>
-- Examine Both Sides
-  - SmartBlocks command: <%AOTEBS%>
-- First Important Priorities
-  - SmartBlocks command: <%AOTFIP%>
-- Five Whys
-  - SmartBlocks command: <%AOTFIVEWHYS%>
-- Next Action
-  - SmartBlocks command: <%AOTNEXTACTION%>
-- Pain Button (Ray Dalio)
-  - SmartBlocks command: <%AOTPAIN%>
-- Plus, Minus and Interesting
-  - SmartBlocks command: <%AOTPMI%>
-- Recognise, Analyse, Divide
-  - SmartBlocks command: <%AOTRAD%>
-- REALLY?
-  - SmartBlocks command: <%AOTREALLY%>
-- REAPPRAISED checklist
-  - SmartBlocks command: <%AOTREAPPRAISED%>
-- Regret Minimisation
-  - SmartBlocks command: <%AOTREGRET%>
-- Right to Disagree (Cortex Futura) 
-  - SmartBlocks command: <%AOTRTD%>
-- Right to Disagree (Deeper Version)
-  - SmartBlocks command: <%AOTRTDDEEP%>
-- Simple Choice
-  - SmartBlocks command: <%AOTCHOICE%>
-- Six Thinking Hats
-  - SmartBlocks command: <%AOTSIXHATS%>
-- SWOT Analysis
-  - SmartBlocks command: <%AOTSWOT%>
-- TOSCA
-  - SmartBlocks command: <%AOTTOSCA%>
-- Want, Impediment, Remedy
-  - SmartBlocks command: <%AOTWANT%>
+AOTs are **not automation** and **not AI**. They are intentional cognitive tools: small, named thinking patterns that you can invoke exactly when you need them.
 
-Still to come:
+You can trigger AOTs via:
+- The **Command Palette**
+- **Roam hotkeys**
+- **SmartBlocks flows**
+
+---
+
+## Recent Updates (Architecture & Safety)
+
+This extension has been **substantially rewritten** to improve robustness, predictability, and safety — especially under heavy SmartBlocks and Command Palette usage.
+
+### What changed
+
+- **Unified execution engine**  
+  All AOTs now run through a single, consistent execution pathway.
+
+- **Safer cancellation & cleanup**
+  Cancelling an AOT no longer leaves partial structure behind or overwrites content.
+
+- **Focus-aware behavior**
+  The engine respects block focus state and avoids destructive edits.
+
+- **Isolation between runs**
+  Each invocation is isolated; state cannot leak between AOTs.
+
+- **Extensible registry**
+  New AOTs can be added safely without destabilising existing ones.
+
+The goal: **AOTs should feel boringly reliable**.
+
+---
+
+## What Are Algorithms of Thought?
+
+An Algorithm of Thought is a **named thinking pattern** with:
+- A clear purpose
+- A fixed structure
+- Minimal ceremony
+
+They are designed to:
+- Reduce cognitive load
+- Externalise reasoning
+- Prevent common thinking traps
+- Encourage deliberate, structured reflection
+
+Think of them as **mental macros**.
+
+---
+
+## Algorithms of Thought — Grouped by Theme
+Below is the full set of available AOTs, grouped by what kind of thinking they support. Each includes a short description and its SmartBlocks command.
+
+### 🧭 Direction, Goals & Priorities
+- **Aims, Goals, Objectives**
+  Clarifies high-level intent vs concrete objectives.
+   `<%AOTAGO%>`
+- **First Important Priorities** `<%AOTFIP%>`
+- **Next Action** `<%AOTNEXTACTION%>`
+
+### ⚖️ Decision-Making & Trade-offs
+- **Basic Decision** `<%AOTBASICDECISION%>`
+- **Simple Choice** `<%AOTCHOICE%>`
+- **Alternatives, Possibilities, Choices** `<%AOTAPC%>`
+- **Regret Minimisation** `<%AOTREGRET%>`
+- **Design / Decision, Outcome, Channels, Action (DODCA)** `<%AOTDODCA%>`
+
+### 🔍 Critical Thinking & Challenge
+- **Assumptions X-Ray** `<%AOTAX%>`
+- **Examine Both Sides** `<%AOTEBS%>`
+- **REALLY?** `<%AOTREALLY%>`
+- **Difference Engine** `<%AOTDIFFERENCE%>`
+
+### 🧠 Analysis, Diagnosis & Understanding
+- **Five Whys** `<%AOTFIVEWHYS%>`
+- **Recognise, Analyse, Divide** `<%AOTRAD%>`
+- **Consequence and Sequel** `<%AOTCS%>`
+- **Consider All Factors** `<%AOTCAF%>`
+
+### 🤝 Disagreement & Perspective
+- **Agreement, Disagreement and Irrelevance** `<%AOTADI%>`
+- **Right to Disagree (Cortex Futura)** `<%AOTRTD%>`
+- **Right to Disagree (Deeper Version)** `<%AOTRTDDEEP%>`
+
+### 🧩 Creativity & Reframing
+- **Six Thinking Hats** `<%AOTSIXHATS%>`
+- **Plus, Minus, Interesting** `<%AOTPMI%>`
+- **SWOT Analysis** `<%AOTSWOT%>`
+
+### 🛠 Action & Resolution
+- **Want, Impediment, Remedy** `<%AOTWANT%>`
+- **TOSCA** `<%AOTTOSCA%>`
+- **Pain Button (Ray Dalio)** `<%AOTPAIN%>`
+
+### 📚 Source Analysis & Appraisal
+- **REAPPRAISED Checklist** `<%AOTREAPPRAISED%>`
+
+---
+
+## Which Algorithm of Thought Should I Use?
+
+- **Unclear problem** → RAD, Five Whys, CAF  
+- **Making a decision** → Basic Decision, APC, Regret Minimisation  
+- **Too many priorities** → AGO, FIP, Next Action  
+- **Bias or weak reasoning** → Assumptions X-Ray, REALLY?, EBS  
+- **Disagreement** → RTD, ADI  
+- **Creative reframing** → Six Hats, PMI, SWOT  
+- **Moving to action** → WIR, TOSCA  
+- **Evaluating a source** → REAPPRAISED
+
+---
+
+## Coming Soon
 - Issue Log
-- Other People's Views
+- Other People’s Views
 
-There is a lot of previous work in this space, especially from when Roam42 SmartBlocks were first created. There is a public archive of early SmartBlocks available which features of many of these AOT at https://github.com/dvargas92495/SmartBlocks/issues.
+---
 
-Other sources:
-- https://www.cortexfutura.com/c/algorithm-of-thought/
-- https://www.cortexfutura.com/adversarial-reading/
-- https://www.virtualsalt.com/problem-solving-techniques/
-- https://www.zsolt.blog/search/label/Algorithms%20of%20Thought
-- https://www.zsolt.blog/2020/12/tosca-pattern-for-framing-problems.html
-- https://www.debono.com/de-bono-thinking-lessons-1
+## Background & Influences
+
+- Cortex Futura
+- Edward de Bono
+- VirtualSalt
+- Zsolt’s Algorithms of Thought
