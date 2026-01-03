@@ -92,9 +92,6 @@ Below is the full set of available AOTs, grouped by what kind of thinking they s
 - **Examine Both Sides**
   - Counteracts one-sided reasoning.
   - `<%AOTEBS%>`
-- **REALLY?**
-  - A sharp, minimal scepticism check.
-  - `<%AOTREALLY%>`
 - **Difference Engine**
   - Identifies what actually differs between options or positions.
   - `<%AOTDIFFERENCE%>`
@@ -147,6 +144,9 @@ Below is the full set of available AOTs, grouped by what kind of thinking they s
   - `<%AOTPAIN%>`
 
 ### 📚 Source Analysis & Appraisal
+- **REALLY?**
+  - A fast, structured scepticism checklist for evaluating claims, studies, statistics, or persuasive arguments. Designed to trigger epistemic discomfort early, before weak or misleading results are accepted.
+  - `<%AOTREALLY%>`
 - **REAPPRAISED Checklist**
   - A structured checklist for critically appraising sources, arguments, or bodies of evidence (e.g. articles, claims, proposals). Particularly useful for academic reading, policy documents, and persuasive writing.
   - `<%AOTREAPPRAISED%>`
@@ -161,67 +161,69 @@ If you’re not sure where to start, use this guide. Pick the kind of thinking y
 
 Use these to understand or diagnose before acting:
 
-- *Recognise, Analyse, Divide* – break complexity apart
-- *Five Whys* – find root causes
-- *Consider All Factors* – widen the frame
-- *Difference Engine* – clarify what truly differs
-- *Consequence and Sequel* – explore downstream effects
+- **Recognise, Analyse, Divide** – break complexity apart
+- **Five Whys** – find root causes
+- **Consider All Factors** – widen the frame
+- **Difference Engine** – clarify what truly differs
+- **Consequence and Sequel** – explore downstream effects
 
 ### "I need to make a decision"
 
 Use these when you are choosing between options:
 
-- *Simple Choice* – low-stakes, few options
-- *Basic Decision* – everyday decisions
-- *Alternatives, Possibilities, Choices* – expand option space
-- *Regret Minimisation* – long-term, identity-shaping decisions
-- *DODCA* – decisions that must lead to execution
+- **Simple Choice** – low-stakes, few options
+- **Basic Decision** – everyday decisions
+- **Alternatives, Possibilities, Choices** – expand option space
+- **Regret Minimisation** – long-term, identity-shaping decisions
+- **DODCA** – decisions that must lead to execution
 
 ### "Everything feels important — I need focus"
 
 Use these to prioritise and orient:
 
-- Aims, Goals, Objectives – clarify intent vs execution
-- First Important Priorities – force ranking
-- Next Action – move from thinking to doing
+- **Aims, Goals, Objectives** – clarify intent vs execution
+- **First Important Priorities** – force ranking
+- **Next Action** – move from thinking to doing
 
 ### "I'm worried my thinking is biased or shallow"
 
 Use these to stress-test reasoning:
 
-- *Assumptions X-Ray* – surface hidden assumptions
-- *Examine Both Sides* – counter confirmation bias
-- *REALLY?* – fast scepticism check
-- *Agreement, Disagreement and Irrelevance* – separate signal from noise
+- **Assumptions X-Ray** – surface hidden assumptions
+- **Examine Both Sides** – counter confirmation bias
+- **Agreement, Disagreement and Irrelevance** – separate signal from noise
 
 ### "There's disagreement or competing viewpoints"
 
 Use these for constructive adversarial thinking:
 
-- *Right to Disagree (Cortex Futura)* – principled disagreement
-- *Right to Disagree (Deeper Version)* – rigorous adversarial analysis
-- *Agreement, Disagreement and Irrelevance* – map alignment and divergence
+- **Right to Disagree (Cortex Futura)** – principled disagreement
+- **Right to Disagree (Deeper Version)** – rigorous adversarial analysis
+- **Agreement, Disagreement and Irrelevance** – map alignment and divergence
 
 ### "I want to think more creatively or reframe the situation"
 
 Use these to change perspective:
 
-- *Six Thinking Hats* – parallel modes of thinking
-- *Plus, Minus, Interesting* – quick reframing
-- *SWOT Analysis* – situational overview
+- **Six Thinking Hats** – parallel modes of thinking
+- **Plus, Minus, Interesting** – quick reframing
+- **SWOT Analysis** – situational overview
 
 ### "I need to move from insight to action"
 
 Use these when the problem is understood but progress is stuck:
 
-- *Want, Impediment, Remedy* – identify blockers and fixes
-- *TOSCA* – clarify triggers, outcomes, and actions
-- *Pain Button (Ray Dalio)* – learn from emotional friction
-- *Consequence and Sequel* – sanity-check actions over time
+- **Want, Impediment, Remedy** – identify blockers and fixes
+- **TOSCA** – clarify triggers, outcomes, and actions
+- **Pain Button (Ray Dalio)** – learn from emotional friction
+- **Consequence and Sequel** – sanity-check actions over time
 
 ### "I'm reading or evaluating a source or claim"
+
 Use this when the task is *appraisal, not decision*:
-- *REAPPRAISED Checklist* – systematic source and evidence evaluation
+
+- **REALLY?** – fast scepticism check
+- **REAPPRAISED Checklist** – systematic source and evidence evaluation
 
 A Useful Rule of Thumb:
 - If you’re *confused* → diagnose
@@ -230,7 +232,7 @@ A Useful Rule of Thumb:
 - If you’re *arguing* → adversarial thinking
 - If you’re *reading* → appraise
 
-Algorithms of Thought work best when you *name the thinking problem first*.
+Algorithms of Thought work best when you **name the thinking problem first**.
 
 ---
 
@@ -242,7 +244,15 @@ Algorithms of Thought work best when you *name the thinking problem first*.
 
 ## Background & Influences
 
-- Cortex Futura
-- Edward de Bono
-- VirtualSalt
-- Zsolt’s Algorithms of Thought
+This extension builds on a long lineage of structured thinking work, particularly early SmartBlocks experimentation.
+
+Notable sources and inspiration:
+- https://www.cortexfutura.com/c/algorithm-of-thought/
+- https://www.cortexfutura.com/adversarial-reading/
+- https://www.virtualsalt.com/problem-solving-techniques/
+- https://www.zsolt.blog/search/label/Algorithms%20of%20Thought
+- https://www.zsolt.blog/2020/12/tosca-pattern-for-framing-problems.html
+- https://www.debono.com/de-bono-thinking-lessons-1
+
+A public archive of early SmartBlocks AOT experiments is available at:
+https://github.com/dvargas92495/SmartBlocks/issues
