@@ -86,47 +86,151 @@ Below is the full set of available AOTs, grouped by what kind of thinking they s
   - `<%AOTDODCA%>`
 
 ### 🔍 Critical Thinking & Challenge
-- **Assumptions X-Ray** `<%AOTAX%>`
-- **Examine Both Sides** `<%AOTEBS%>`
-- **REALLY?** `<%AOTREALLY%>`
-- **Difference Engine** `<%AOTDIFFERENCE%>`
+- **Assumptions X-Ray**
+  - Makes hidden assumptions explicit.
+  - `<%AOTAX%>`
+- **Examine Both Sides**
+  - Counteracts one-sided reasoning.
+  - `<%AOTEBS%>`
+- **REALLY?**
+  - A sharp, minimal scepticism check.
+  - `<%AOTREALLY%>`
+- **Difference Engine**
+  - Identifies what actually differs between options or positions.
+  - `<%AOTDIFFERENCE%>`
 
 ### 🧠 Analysis, Diagnosis & Understanding
-- **Five Whys** `<%AOTFIVEWHYS%>`
-- **Recognise, Analyse, Divide** `<%AOTRAD%>`
-- **Consequence and Sequel** `<%AOTCS%>`
-- **Consider All Factors** `<%AOTCAF%>`
+- **Five Whys**
+  - Root-cause analysis through iterative questioning.
+  - `<%AOTFIVEWHYS%>`
+- **Recognise, Analyse, Divide**
+  - Breaks complex problems into manageable components.
+  - `<%AOTRAD%>`
+- **Consequence and Sequel**
+  - Short- and long-term impact analysis.
+  -  `<%AOTCS%>`
+- **Consider All Factors**
+  - Broadens attention beyond the obvious.
+  - `<%AOTCAF%>`
 
 ### 🤝 Disagreement & Perspective
-- **Agreement, Disagreement and Irrelevance** `<%AOTADI%>`
-- **Right to Disagree (Cortex Futura)** `<%AOTRTD%>`
-- **Right to Disagree (Deeper Version)** `<%AOTRTDDEEP%>`
+- **Agreement, Disagreement and Irrelevance**
+  - Separates signal from noise in arguments.
+  - `<%AOTADI%>`
+- **Right to Disagree (Cortex Futura)**
+  - Structured disagreement without escalation.
+  - `<%AOTRTD%>`
+- **Right to Disagree (Deeper Version)**
+  - A more thorough adversarial-thinking scaffold.
+  - `<%AOTRTDDEEP%>`
 
 ### 🧩 Creativity & Reframing
-- **Six Thinking Hats** `<%AOTSIXHATS%>`
-- **Plus, Minus, Interesting** `<%AOTPMI%>`
-- **SWOT Analysis** `<%AOTSWOT%>`
+- **Six Thinking Hats**
+  - Parallel thinking through explicit modes.
+  - `<%AOTSIXHATS%>`
+- **Plus, Minus, Interesting** 
+  - Fast reframing without overanalysis.
+  - `<%AOTPMI%>`
+- **SWOT Analysis**
+  - Classic situational assessment.
+  - `<%AOTSWOT%>`
 
 ### 🛠 Action & Resolution
-- **Want, Impediment, Remedy** `<%AOTWANT%>`
-- **TOSCA** `<%AOTTOSCA%>`
-- **Pain Button (Ray Dalio)** `<%AOTPAIN%>`
+- **Want, Impediment, Remedy**
+  - Surfaces blockers and actionable remedies.
+  - `<%AOTWANT%>`
+- **TOSCA**
+  - Frames problems in terms of triggers, outcomes, and actions.
+  - `<%AOTTOSCA%>`
+- **Pain Button (Ray Dalio)**
+  - Identifies emotional triggers as learning opportunities.
+  - `<%AOTPAIN%>`
 
 ### 📚 Source Analysis & Appraisal
-- **REAPPRAISED Checklist** `<%AOTREAPPRAISED%>`
+- **REAPPRAISED Checklist**
+  - A structured checklist for critically appraising sources, arguments, or bodies of evidence (e.g. articles, claims, proposals). Particularly useful for academic reading, policy documents, and persuasive writing.
+  - `<%AOTREAPPRAISED%>`
 
 ---
 
 ## Which Algorithm of Thought Should I Use?
 
-- **Unclear problem** → RAD, Five Whys, CAF  
-- **Making a decision** → Basic Decision, APC, Regret Minimisation  
-- **Too many priorities** → AGO, FIP, Next Action  
-- **Bias or weak reasoning** → Assumptions X-Ray, REALLY?, EBS  
-- **Disagreement** → RTD, ADI  
-- **Creative reframing** → Six Hats, PMI, SWOT  
-- **Moving to action** → WIR, TOSCA  
-- **Evaluating a source** → REAPPRAISED
+If you’re not sure where to start, use this guide. Pick the kind of thinking you need — not the tool you remember.
+
+### "I'm not clear what the problem actually is"
+
+Use these to understand or diagnose before acting:
+
+- *Recognise, Analyse, Divide* – break complexity apart
+- *Five Whys* – find root causes
+- *Consider All Factors* – widen the frame
+- *Difference Engine* – clarify what truly differs
+- *Consequence and Sequel* – explore downstream effects
+
+### "I need to make a decision"
+
+Use these when you are choosing between options:
+
+- *Simple Choice* – low-stakes, few options
+- *Basic Decision* – everyday decisions
+- *Alternatives, Possibilities, Choices* – expand option space
+- *Regret Minimisation* – long-term, identity-shaping decisions
+- *DODCA* – decisions that must lead to execution
+
+### "Everything feels important — I need focus"
+
+Use these to prioritise and orient:
+
+- Aims, Goals, Objectives – clarify intent vs execution
+- First Important Priorities – force ranking
+- Next Action – move from thinking to doing
+
+### "I'm worried my thinking is biased or shallow"
+
+Use these to stress-test reasoning:
+
+- *Assumptions X-Ray* – surface hidden assumptions
+- *Examine Both Sides* – counter confirmation bias
+- *REALLY?* – fast scepticism check
+- *Agreement, Disagreement and Irrelevance* – separate signal from noise
+
+### "There's disagreement or competing viewpoints"
+
+Use these for constructive adversarial thinking:
+
+- *Right to Disagree (Cortex Futura)* – principled disagreement
+- *Right to Disagree (Deeper Version)* – rigorous adversarial analysis
+- *Agreement, Disagreement and Irrelevance* – map alignment and divergence
+
+### "I want to think more creatively or reframe the situation"
+
+Use these to change perspective:
+
+- *Six Thinking Hats* – parallel modes of thinking
+- *Plus, Minus, Interesting* – quick reframing
+- *SWOT Analysis* – situational overview
+
+### "I need to move from insight to action"
+
+Use these when the problem is understood but progress is stuck:
+
+- *Want, Impediment, Remedy* – identify blockers and fixes
+- *TOSCA* – clarify triggers, outcomes, and actions
+- *Pain Button (Ray Dalio)* – learn from emotional friction
+- *Consequence and Sequel* – sanity-check actions over time
+
+### "I'm reading or evaluating a source or claim"
+Use this when the task is *appraisal, not decision*:
+- *REAPPRAISED Checklist* – systematic source and evidence evaluation
+
+A Useful Rule of Thumb:
+- If you’re *confused* → diagnose
+- If you’re *choosing* → decide
+- If you’re *stuck* → prioritise or act
+- If you’re *arguing* → adversarial thinking
+- If you’re *reading* → appraise
+
+Algorithms of Thought work best when you *name the thinking problem first*.
 
 ---
 
