@@ -59,8 +59,8 @@ Below is the full set of available AOTs, grouped by what kind of thinking they s
 
 ### 🧭 Direction, Goals & Priorities
 - **Aims, Goals, Objectives**
-  Clarifies high-level intent vs concrete objectives.
-   `<%AOTAGO%>`
+  - Clarifies high-level intent vs concrete objectives.
+  - `<%AOTAGO%>`
 - **First Important Priorities** `<%AOTFIP%>`
 - **Next Action** `<%AOTNEXTACTION%>`
 
