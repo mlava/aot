@@ -637,10 +637,14 @@ export default {
             // { palette: "AOT - Issue Log", sb: "AOTISSUELOG", fn: aot_issue_log },
             { palette: "AOT - Next Action", sb: "AOTNEXTACTION", fn: aot_na },
             // { palette: "AOT - Other People's Views", sb: "AOTOPV", fn: aot_opv },
+            { palette: "AOT - Pain Button", sb: "AOTPAIN", fn: aot_pain_button },
             { palette: "AOT - Plus, Minus and Interesting", sb: "AOTPMI", fn: aot_pmi },
+            { palette: "AOT - REALLY?", sb: "AOTREALLY", fn: aot_really },
+            { palette: "AOT - REAPPRAISED", sb: "AOTREAPPRAISED", fn: aot_reappraised },
             { palette: "AOT - Recognise, Analyse, Divide", sb: "AOTRAD", fn: aot_rad },
             { palette: "AOT - Regret Minimisation", sb: "AOTREGRET", fn: aot_regret_min },
-            { palette: "AOT - Right to Disagree", sb: "AOTRTD", fn: aot_right_to_disagree },
+            { palette: "AOT - Right to Disagree (Cortex Futura)", sb: "AOTRTD", fn: aot_right_to_disagree_cortex },
+            { palette: "AOT - Right to Disagree (Deeper Version)", sb: "AOTRTDDEEP", fn: aot_right_to_disagree_deep },
             { palette: "AOT - Simple Choice", sb: "AOTCHOICE", fn: aot_choice },
             { palette: "AOT - Six Thinking Hats", sb: "AOTSIXHATS", fn: aot_six_hats },
             { palette: "AOT - SWOT Analysis", sb: "AOTSWOT", fn: aot_swot },
@@ -718,10 +722,14 @@ export default {
                 "AOTFIP",
                 "AOTFIVEWHYS",
                 "AOTNEXTACTION",
+                "AOTPAIN",
                 "AOTPMI",
                 "AOTRAD",
+                "AOTREALLY",
+                "AOTREAPPRAISED",
                 "AOTREGRET",
                 "AOTRTD",
+                "AOTRTDDEEP",
                 "AOTSIXHATS",
                 "AOTSWOT",
                 "AOTTOSCA",
@@ -750,55 +758,55 @@ export default {
 // Aims, Goals, Objectives
 // https://www.debono.com/de-bono-thinking-lessons-1/4.-AGO-lesson-plan
 async function aot_ago(uid) {
-  throwIfCancelled();
-  forceCommitActiveEditor();
-
-  const topic = await mustPrompt("What is the topic / situation you’re setting objectives for?", 1, "AGO");
-
-  const header = "AGO::";
-  const ctx = getCtx();
-  await detachEditorFromBlockThenWrite(uid, ctx?.windowId || runtime.focusedWindow, async () => {
-    await trackedUpdateBlock(uid, header, true);
-  });
-
-  await trackedCreateBlock(uid, 0, `**Topic:** ${topic}`);
-
-  const aimBlock = window.roamAlphaAPI.util.generateUID();
-  await trackedCreateBlock(uid, 1, "**Aim (overall purpose):**", aimBlock);
-  const aim = await mustPrompt("What is the overall AIM (broad purpose)?", 1, "AGO");
-  await trackedCreateBlock(aimBlock, 0, String(aim));
-
-  const goalsBlock = window.roamAlphaAPI.util.generateUID();
-  await trackedCreateBlock(uid, 2, "**Goals (key results to achieve the aim):**", goalsBlock);
-
-  while (true) {
     throwIfCancelled();
-    const goal = await mustPrompt("Name one GOAL (a key result).", 1, "AGO");
-    await trackedCreateBlock(goalsBlock, "last", String(goal));
+    forceCommitActiveEditor();
 
-    const more = await mustPrompt("Any other goals?", 3, "AGO");
-    if (more !== "yes") break;
-  }
+    const topic = await mustPrompt("What is the topic / situation you’re setting objectives for?", 1, "AGO");
 
-  const objectivesBlock = window.roamAlphaAPI.util.generateUID();
-  await trackedCreateBlock(uid, 3, "**Objectives (specific, actionable steps):**", objectivesBlock);
+    const header = "AGO::";
+    const ctx = getCtx();
+    await detachEditorFromBlockThenWrite(uid, ctx?.windowId || runtime.focusedWindow, async () => {
+        await trackedUpdateBlock(uid, header, true);
+    });
 
-  while (true) {
-    throwIfCancelled();
-    const obj = await mustPrompt("Name one OBJECTIVE (specific, actionable step).", 1, "AGO");
-    await trackedCreateBlock(objectivesBlock, "last", String(obj));
+    await trackedCreateBlock(uid, 0, `**Topic:** ${topic}`);
 
-    const more = await mustPrompt("Any other objectives?", 3, "AGO");
-    if (more !== "yes") break;
-  }
+    const aimBlock = window.roamAlphaAPI.util.generateUID();
+    await trackedCreateBlock(uid, 1, "**Aim (overall purpose):**", aimBlock);
+    const aim = await mustPrompt("What is the overall AIM (broad purpose)?", 1, "AGO");
+    await trackedCreateBlock(aimBlock, 0, String(aim));
 
-  await prompt(
-    "Quick review: does each objective clearly support a goal, and do the goals support the aim?",
-    4,
-    "AGO",
-    null,
-    6500
-  );
+    const goalsBlock = window.roamAlphaAPI.util.generateUID();
+    await trackedCreateBlock(uid, 2, "**Goals (key results to achieve the aim):**", goalsBlock);
+
+    while (true) {
+        throwIfCancelled();
+        const goal = await mustPrompt("Name one GOAL (a key result).", 1, "AGO");
+        await trackedCreateBlock(goalsBlock, "last", String(goal));
+
+        const more = await mustPrompt("Any other goals?", 3, "AGO");
+        if (more !== "yes") break;
+    }
+
+    const objectivesBlock = window.roamAlphaAPI.util.generateUID();
+    await trackedCreateBlock(uid, 3, "**Objectives (specific, actionable steps):**", objectivesBlock);
+
+    while (true) {
+        throwIfCancelled();
+        const obj = await mustPrompt("Name one OBJECTIVE (specific, actionable step).", 1, "AGO");
+        await trackedCreateBlock(objectivesBlock, "last", String(obj));
+
+        const more = await mustPrompt("Any other objectives?", 3, "AGO");
+        if (more !== "yes") break;
+    }
+
+    await prompt(
+        "Quick review: does each objective clearly support a goal, and do the goals support the aim?",
+        4,
+        "AGO",
+        null,
+        6500
+    );
 }
 
 // Agreement, Disagreement and Irrelevance
@@ -1020,46 +1028,46 @@ async function aot_bd(uid) {
 // Consequence and Sequel
 // https://www.debono.com/de-bono-thinking-lessons-1/3.-C%26S-lesson-plan
 async function aot_cs(uid) {
-  throwIfCancelled();
-  forceCommitActiveEditor();
-
-  const action = await mustPrompt("What action/decision/idea are you evaluating consequences for?", 1, "C&S");
-
-  const header = "C&S::";
-  const ctx = getCtx();
-  await detachEditorFromBlockThenWrite(uid, ctx?.windowId || runtime.focusedWindow, async () => {
-    await trackedUpdateBlock(uid, header, true);
-  });
-
-  await trackedCreateBlock(uid, 0, `**Action / Decision:** ${action}`);
-
-  const makeHorizon = async (title, question, order) => {
     throwIfCancelled();
-    const block = window.roamAlphaAPI.util.generateUID();
-    await trackedCreateBlock(uid, order, `**${title}:**`, block);
+    forceCommitActiveEditor();
 
-    while (true) {
-      throwIfCancelled();
-      const c = await mustPrompt(question, 1, "C&S");
-      await trackedCreateBlock(block, "last", String(c));
+    const action = await mustPrompt("What action/decision/idea are you evaluating consequences for?", 1, "C&S");
 
-      const more = await mustPrompt("Any more?", 3, "C&S");
-      if (more !== "yes") break;
-    }
-  };
+    const header = "C&S::";
+    const ctx = getCtx();
+    await detachEditorFromBlockThenWrite(uid, ctx?.windowId || runtime.focusedWindow, async () => {
+        await trackedUpdateBlock(uid, header, true);
+    });
 
-  await makeHorizon("Immediate consequences", "Name one immediate consequence.", 1);
-  await makeHorizon("Short-term sequels", "Name one short-term sequel (what follows on).", 2);
-  await makeHorizon("Medium-term sequels", "Name one medium-term sequel.", 3);
-  await makeHorizon("Long-term sequels", "Name one long-term sequel.", 4);
+    await trackedCreateBlock(uid, 0, `**Action / Decision:** ${action}`);
 
-  await prompt(
-    "Scan your list: which sequels are most likely, and which are most important?",
-    4,
-    "C&S",
-    null,
-    6500
-  );
+    const makeHorizon = async (title, question, order) => {
+        throwIfCancelled();
+        const block = window.roamAlphaAPI.util.generateUID();
+        await trackedCreateBlock(uid, order, `**${title}:**`, block);
+
+        while (true) {
+            throwIfCancelled();
+            const c = await mustPrompt(question, 1, "C&S");
+            await trackedCreateBlock(block, "last", String(c));
+
+            const more = await mustPrompt("Any more?", 3, "C&S");
+            if (more !== "yes") break;
+        }
+    };
+
+    await makeHorizon("Immediate consequences", "Name one immediate consequence.", 1);
+    await makeHorizon("Short-term sequels", "Name one short-term sequel (what follows on).", 2);
+    await makeHorizon("Medium-term sequels", "Name one medium-term sequel.", 3);
+    await makeHorizon("Long-term sequels", "Name one long-term sequel.", 4);
+
+    await prompt(
+        "Scan your list: which sequels are most likely, and which are most important?",
+        4,
+        "C&S",
+        null,
+        6500
+    );
 }
 
 // Consider All Factors
@@ -1086,48 +1094,48 @@ async function aot_caf(uid) {
 
 // Design/Decision, Outcome, Channels, Action
 async function aot_dodca(uid) {
-  throwIfCancelled();
-  forceCommitActiveEditor();
-
-  const dd = await mustPrompt("What are you designing/deciding?", 1, "DODCA");
-
-  const header = "DODCA::";
-  const ctx = getCtx();
-  await detachEditorFromBlockThenWrite(uid, ctx?.windowId || runtime.focusedWindow, async () => {
-    await trackedUpdateBlock(uid, header, true);
-  });
-
-  await trackedCreateBlock(uid, 0, `**Design/Decision:** ${dd}`);
-
-  const outcomeBlock = window.roamAlphaAPI.util.generateUID();
-  await trackedCreateBlock(uid, 1, "**Outcomes (what success looks like):**", outcomeBlock);
-  while (true) {
     throwIfCancelled();
-    const o = await mustPrompt("Name one desired outcome.", 1, "DODCA");
-    await trackedCreateBlock(outcomeBlock, "last", String(o));
-    const more = await mustPrompt("Any other outcomes?", 3, "DODCA");
-    if (more !== "yes") break;
-  }
+    forceCommitActiveEditor();
 
-  const channelsBlock = window.roamAlphaAPI.util.generateUID();
-  await trackedCreateBlock(uid, 2, "**Channels (ways/means to reach outcomes):**", channelsBlock);
-  while (true) {
-    throwIfCancelled();
-    const c = await mustPrompt("Name one channel/approach/lever you could use.", 1, "DODCA");
-    await trackedCreateBlock(channelsBlock, "last", String(c));
-    const more = await mustPrompt("Any other channels?", 3, "DODCA");
-    if (more !== "yes") break;
-  }
+    const dd = await mustPrompt("What are you designing/deciding?", 1, "DODCA");
 
-  const actionBlock = window.roamAlphaAPI.util.generateUID();
-  await trackedCreateBlock(uid, 3, "**Actions (next steps):**", actionBlock);
-  while (true) {
-    throwIfCancelled();
-    const a = await mustPrompt("Name one next action you can take.", 1, "DODCA");
-    await trackedCreateBlock(actionBlock, "last", `{{[[TODO]]}} ${a}`);
-    const more = await mustPrompt("Any other actions?", 3, "DODCA");
-    if (more !== "yes") break;
-  }
+    const header = "DODCA::";
+    const ctx = getCtx();
+    await detachEditorFromBlockThenWrite(uid, ctx?.windowId || runtime.focusedWindow, async () => {
+        await trackedUpdateBlock(uid, header, true);
+    });
+
+    await trackedCreateBlock(uid, 0, `**Design/Decision:** ${dd}`);
+
+    const outcomeBlock = window.roamAlphaAPI.util.generateUID();
+    await trackedCreateBlock(uid, 1, "**Outcomes (what success looks like):**", outcomeBlock);
+    while (true) {
+        throwIfCancelled();
+        const o = await mustPrompt("Name one desired outcome.", 1, "DODCA");
+        await trackedCreateBlock(outcomeBlock, "last", String(o));
+        const more = await mustPrompt("Any other outcomes?", 3, "DODCA");
+        if (more !== "yes") break;
+    }
+
+    const channelsBlock = window.roamAlphaAPI.util.generateUID();
+    await trackedCreateBlock(uid, 2, "**Channels (ways/means to reach outcomes):**", channelsBlock);
+    while (true) {
+        throwIfCancelled();
+        const c = await mustPrompt("Name one channel/approach/lever you could use.", 1, "DODCA");
+        await trackedCreateBlock(channelsBlock, "last", String(c));
+        const more = await mustPrompt("Any other channels?", 3, "DODCA");
+        if (more !== "yes") break;
+    }
+
+    const actionBlock = window.roamAlphaAPI.util.generateUID();
+    await trackedCreateBlock(uid, 3, "**Actions (next steps):**", actionBlock);
+    while (true) {
+        throwIfCancelled();
+        const a = await mustPrompt("Name one next action you can take.", 1, "DODCA");
+        await trackedCreateBlock(actionBlock, "last", `{{[[TODO]]}} ${a}`);
+        const more = await mustPrompt("Any other actions?", 3, "DODCA");
+        if (more !== "yes") break;
+    }
 }
 
 // Difference Engine
@@ -1178,43 +1186,43 @@ async function aot_de(uid) {
 // Examine Both Sides
 // https://www.zsolt.blog/2020/12/de-bonos-algorithms-of-thought-for_8.html
 async function aot_ebs(uid) {
-  throwIfCancelled();
-  forceCommitActiveEditor();
-
-  const issue = await mustPrompt("What issue / disagreement / choice do you want to examine both sides of?", 1, "EBS");
-
-  const header = "EBS::";
-  const ctx = getCtx();
-  await detachEditorFromBlockThenWrite(uid, ctx?.windowId || runtime.focusedWindow, async () => {
-    await trackedUpdateBlock(uid, header, true);
-  });
-
-  await trackedCreateBlock(uid, 0, `**Issue:** ${issue}`);
-
-  const sideABlock = window.roamAlphaAPI.util.generateUID();
-  await trackedCreateBlock(uid, 1, "**Side A (your current view):**", sideABlock);
-  while (true) {
     throwIfCancelled();
-    const p = await mustPrompt("Add one point for Side A.", 1, "EBS");
-    await trackedCreateBlock(sideABlock, "last", String(p));
-    const more = await mustPrompt("More points for Side A?", 3, "EBS");
-    if (more !== "yes") break;
-  }
+    forceCommitActiveEditor();
 
-  const sideBBlock = window.roamAlphaAPI.util.generateUID();
-  await trackedCreateBlock(uid, 2, "**Side B (the other view, mapped neutrally):**", sideBBlock);
-  while (true) {
-    throwIfCancelled();
-    const p = await mustPrompt("Add one point for Side B (as fairly as you can).", 1, "EBS");
-    await trackedCreateBlock(sideBBlock, "last", String(p));
-    const more = await mustPrompt("More points for Side B?", 3, "EBS");
-    if (more !== "yes") break;
-  }
+    const issue = await mustPrompt("What issue / disagreement / choice do you want to examine both sides of?", 1, "EBS");
 
-  const bridgeBlock = window.roamAlphaAPI.util.generateUID();
-  await trackedCreateBlock(uid, 3, "**Bridge / synthesis / next step:**", bridgeBlock);
-  const next = await mustPrompt("Given both sides, what’s a constructive next step?", 1, "EBS");
-  await trackedCreateBlock(bridgeBlock, 0, `{{[[TODO]]}} ${next}`);
+    const header = "EBS::";
+    const ctx = getCtx();
+    await detachEditorFromBlockThenWrite(uid, ctx?.windowId || runtime.focusedWindow, async () => {
+        await trackedUpdateBlock(uid, header, true);
+    });
+
+    await trackedCreateBlock(uid, 0, `**Issue:** ${issue}`);
+
+    const sideABlock = window.roamAlphaAPI.util.generateUID();
+    await trackedCreateBlock(uid, 1, "**Side A (your current view):**", sideABlock);
+    while (true) {
+        throwIfCancelled();
+        const p = await mustPrompt("Add one point for Side A.", 1, "EBS");
+        await trackedCreateBlock(sideABlock, "last", String(p));
+        const more = await mustPrompt("More points for Side A?", 3, "EBS");
+        if (more !== "yes") break;
+    }
+
+    const sideBBlock = window.roamAlphaAPI.util.generateUID();
+    await trackedCreateBlock(uid, 2, "**Side B (the other view, mapped neutrally):**", sideBBlock);
+    while (true) {
+        throwIfCancelled();
+        const p = await mustPrompt("Add one point for Side B (as fairly as you can).", 1, "EBS");
+        await trackedCreateBlock(sideBBlock, "last", String(p));
+        const more = await mustPrompt("More points for Side B?", 3, "EBS");
+        if (more !== "yes") break;
+    }
+
+    const bridgeBlock = window.roamAlphaAPI.util.generateUID();
+    await trackedCreateBlock(uid, 3, "**Bridge / synthesis / next step:**", bridgeBlock);
+    const next = await mustPrompt("Given both sides, what’s a constructive next step?", 1, "EBS");
+    await trackedCreateBlock(bridgeBlock, 0, `{{[[TODO]]}} ${next}`);
 }
 
 // First Important Priorities (FIP)
@@ -1451,6 +1459,122 @@ async function aot_na_sim(uid, order, na) {
     await trackedCreateBlock(uid, curOrder + 1, `{{[[TODO]]}} ${na}`, naBlock);
 }
 
+// Ray Dalio's Pain Button
+// Source SmartBlocks version (structure adapted): https://github.com/dvargas92495/SmartBlocks/issues/104#issue-761609493
+async function aot_pain_button(uid) {
+    throwIfCancelled();
+    forceCommitActiveEditor();
+
+    const ctx = getCtx();
+    await detachEditorFromBlockThenWrite(uid, ctx?.windowId || runtime.focusedWindow, async () => {
+        await trackedUpdateBlock(uid, "Pain Button::", true);
+    });
+
+    // ---- Situation ----
+    const situation = await mustPrompt(
+        "What situation is causing you pain (or discomfort) right now?",
+        1,
+        "Pain Button"
+    );
+
+    const situationSec = await ensureSection(uid, "**Situation:**");
+    await appendLine(situationSec, situation);
+
+    // ---- Emotion (select, with Other fallback) ----
+    const EMOTIONS = [
+        "Disappointment",
+        "Frustration",
+        "Embarrassment",
+        "Stress",
+        "Disrespect",
+        "Nervousness",
+        "Worry",
+        "Insecurity",
+        "Other",
+    ];
+
+    const emotionOptions = EMOTIONS.map((e) => ({
+        value: (e || "").toLowerCase().replace(/[^a-z0-9_-]/g, "-"),
+        label: e,
+    }));
+
+    const emotionSelect = buildSelectFromOptions(emotionOptions);
+
+    let emotion = await mustPrompt(
+        "What emotion best fits what you're feeling?",
+        2,
+        "Pain Button",
+        emotionSelect
+    );
+
+    // Map the select value back to a label
+    const picked = emotionOptions.find((o) => o.value === emotion);
+    emotion = picked?.label || "";
+
+    if (emotion === "Other" || !emotion) {
+        emotion = await mustPrompt("What emotion are you experiencing?", 1, "Pain Button");
+    }
+
+    const emotionSec = await ensureSection(uid, "**Emotion:**");
+    await appendLine(emotionSec, emotion);
+
+    // ---- Reflection (timed entry -> writes into a single child under Reflection) ----
+    const reflectionSec = await ensureSection(uid, "**Reflection:**");
+
+    // Create just ONE child to hold the user's reflection
+    const reflectionAnswerUid = await trackedCreateBlock(reflectionSec, "last", "");
+
+    // Timed text entry (3 min) — instruction lives in the prompt
+    const reflectionText = await mustPrompt(
+        "Reflect for 3 minutes:\n\n• What happened (facts)?\n• What did you assume / interpret?\n• What did you do next?\n\nType below — it will auto-save when time runs out (or press Save).",
+        6,
+        "Pain Button — 3-minute reflection",
+        null,
+        180000
+    );
+
+    await trackedUpdateBlock(reflectionAnswerUid, String(reflectionText ?? ""), true);
+    await safeSetFocus(reflectionAnswerUid);
+
+    // ---- Questions ----
+    const questionsSec = await ensureSection(uid, "**Answer these questions:**");
+
+    const warranted = await mustPrompt(
+        "Do you still feel this pain was warranted or valid?",
+        3,
+        "Pain Button"
+    );
+
+    const stillMatters = await mustPrompt(
+        "Does this situation still matter today?",
+        3,
+        "Pain Button"
+    );
+
+    const mitigation = await mustPrompt(
+        "What is one thing you could do to mitigate against this type of pain in the future?",
+        1,
+        "Pain Button"
+    );
+
+    await appendLine(questionsSec, `Was the pain warranted and valid:: ${warranted}`);
+    await appendLine(questionsSec, `Does the situation still matter:: ${stillMatters}`);
+
+    // ---- Mitigation ----
+    const mitigationSec = await ensureSection(uid, "**Mitigation:**");
+    await appendLine(mitigationSec, mitigation);
+
+    // Optional close-out / next note
+    const closeSec = await ensureSection(uid, "**Progress:**");
+    const closeLeaf = await leaf(closeSec, { focus: true });
+    await trackedUpdateBlock(
+        closeLeaf,
+        "What did you learn here — and what will you do differently next time?",
+        true
+    );
+    await safeSetFocus(closeLeaf);
+}
+
 // Plus, Minus and Interesting
 async function aot_pmi(uid) {
     throwIfCancelled();
@@ -1487,6 +1611,214 @@ async function aot_pmi(uid) {
         const more = await mustPrompt("Are there any more interesting aspects to consider?", 3, "Plus, Minus and Interesting");
         if (more !== "yes") break;
     }
+}
+
+// REALLY?
+async function aot_really(uid) {
+    throwIfCancelled();
+    forceCommitActiveEditor();
+
+    const ctx = getCtx();
+    await detachEditorFromBlockThenWrite(uid, ctx?.windowId || runtime.focusedWindow, async () => {
+        await trackedUpdateBlock(uid, "REALLY?::", true);
+    });
+
+    const claim = await mustPrompt(
+        "What statement, belief, or assumption are you questioning?",
+        1,
+        "REALLY?"
+    );
+    const claimSec = await ensureSection(uid, "**Claim:**");
+    await appendLine(claimSec, claim);
+
+    const evidence = await mustPrompt(
+        "What evidence supports this claim?",
+        1,
+        "REALLY?"
+    );
+    const eSec = await ensureSection(uid, "**Evidence:**");
+    await appendLine(eSec, evidence);
+
+    const counter = await mustPrompt(
+        "What evidence or examples might contradict it?",
+        1,
+        "REALLY?"
+    );
+    const cSec = await ensureSection(uid, "**Contrary evidence:**");
+    await appendLine(cSec, counter);
+
+    const scope = await mustPrompt(
+        "Is this always true, usually true, or only sometimes true?",
+        1,
+        "REALLY?"
+    );
+    const sSec = await ensureSection(uid, "**Scope / limits:**");
+    await appendLine(sSec, scope);
+
+    const alt = await mustPrompt(
+        "What alternative explanations could exist?",
+        1,
+        "REALLY?"
+    );
+    const aSec = await ensureSection(uid, "**Alternative explanations:**");
+    await appendLine(aSec, alt);
+
+    const reviseSec = await ensureSection(uid, "**Revised belief:**");
+    const leafUid = await leaf(reviseSec, { focus: true });
+    await trackedUpdateBlock(
+        leafUid,
+        "After questioning this, how would you now state the belief more accurately?",
+        true
+    );
+    await safeSetFocus(leafUid);
+}
+
+// REAPPRAISED — Research Integrity Checklist
+// https://www.cortexfutura.com/adversarial-reading/
+async function aot_reappraised(uid) {
+    throwIfCancelled();
+    forceCommitActiveEditor();
+
+    const ctx = getCtx();
+    await detachEditorFromBlockThenWrite(
+        uid,
+        ctx?.windowId || runtime.focusedWindow,
+        async () => {
+            await trackedUpdateBlock(uid, "REAPPRAISED::", true);
+        }
+    );
+
+    const paper = await mustPrompt(
+        "What paper, preprint, or study are you evaluating?",
+        1,
+        "REAPPRAISED"
+    );
+
+    const root = await ensureSection(uid, "**Paper under review:**");
+    await appendLine(root, paper);
+
+    const sections = [
+        {
+            title: "Research governance",
+            items: [
+                "Are the locations where the research took place specified, and is this information plausible?",
+                "Is a funding source reported?",
+                "Has the study been registered?",
+                "Are details such as dates and study methods consistent with registration documents?",
+            ],
+        },
+        {
+            title: "Ethics",
+            items: [
+                "Is there evidence that the work has been approved by a specific, recognized committee?",
+                "Are there any concerns about unethical practice?",
+            ],
+        },
+        {
+            title: "Authorship",
+            items: [
+                "Do all authors meet criteria for authorship?",
+                "Are contributorship statements present?",
+                "Are contributorship statements complete?",
+                "Is authorship of related papers consistent?",
+                "Can co-authors attest to the reliability of the paper?",
+            ],
+        },
+        {
+            title: "Productivity",
+            items: [
+                "Is the volume of work reported by the research group plausible?",
+                "Is the reported staffing adequate for the study conduct as described?",
+            ],
+        },
+        {
+            title: "Plagiarism",
+            items: [
+                "Is there evidence of copied work?",
+                "Is there evidence of text recycling or inconsistent pasted material?",
+            ],
+        },
+        {
+            title: "Research conduct",
+            items: [
+                "Is participant recruitment plausible within the stated timeframe?",
+                "Is recruitment plausible given the epidemiology of the disease and study location?",
+                "Do animal or participant numbers align with what is reported?",
+                "Are withdrawals compatible with disease, age, and timeline?",
+                "Are deaths compatible with disease, age, and timeline?",
+                "Is the interval between study completion and manuscript submission plausible?",
+                "Could the study plausibly be completed as described?",
+            ],
+        },
+        {
+            title: "Analyses and methods",
+            items: [
+                "Are the study methods plausible at the stated location?",
+                "Have appropriate analyses been undertaken and reported?",
+                "Is there evidence of poor methodology (missing data, inappropriate handling)?",
+                "Is there evidence of p-hacking or selective analyses?",
+                "Is there evidence of unacknowledged multiple testing?",
+                "Is there outcome switching compared to registered analysis plans?",
+            ],
+        },
+        {
+            title: "Image manipulation",
+            items: [
+                "Is there evidence of manipulation or duplication of images?",
+            ],
+        },
+        {
+            title: "Statistics and data",
+            items: [
+                "Are any data impossible?",
+                "Are subgroup means incompatible with whole-cohort data?",
+                "Are summary data compatible with reported ranges?",
+                "Are summary outcomes identical across groups?",
+                "Are there discrepancies between figures, tables, and text?",
+                "Are statistical test results compatible with reported data?",
+                "Are baseline data excessively similar or different between groups?",
+                "Are outcome data unexpected outliers?",
+                "Are outcome frequencies unusual?",
+                "Are any data outside expected ranges for sex, age, or disease?",
+                "Are percentage and absolute changes consistent?",
+                "Are data consistent with inclusion criteria?",
+                "Are variances in biological variables implausibly consistent?",
+            ],
+        },
+        {
+            title: "Errors",
+            items: [
+                "Are correct units reported?",
+                "Are participant numbers correct and consistent?",
+                "Are proportions and percentages calculated correctly?",
+                "Are results internally consistent?",
+                "Are statistical results internally consistent and plausible?",
+                "Are other data errors present?",
+                "Are there typographical errors?",
+            ],
+        },
+        {
+            title: "Data duplication and reporting",
+            items: [
+                "Have the data been published elsewhere?",
+                "Is duplicate reporting acknowledged or explained?",
+                "How much data is duplicate reported?",
+                "Are duplicate data consistent across publications?",
+                "Are methods consistent across publications?",
+                "Is there evidence of figure duplication?",
+            ],
+        },
+    ];
+
+    for (const section of sections) {
+        const secUid = await ensureSection(uid, section.title);
+        for (const q of section.items) {
+            await appendLine(secUid, q);
+        }
+    }
+
+    // Leave cursor somewhere sensible
+    await safeSetFocus(uid);
 }
 
 // Recognise, Analyse, Divide
@@ -1611,57 +1943,143 @@ async function aot_regret_min(uid) {
     await safeSetFocus(todoLeaf);
 }
 
-// Right to Disagree
-async function aot_right_to_disagree(uid) {
+// Right to Disagree (Cortex triage)
+// https://www.cortexfutura.com/adversarial-reading/
+async function aot_right_to_disagree_cortex(uid) {
     throwIfCancelled();
     forceCommitActiveEditor();
-    await setRootHeading(uid, "Right to Disagree::", true);
 
-    const context = await mustPrompt("What disagreement are you in (briefly describe the context)?", 1, "Right to Disagree");
-    const cSec = await ensureSection(uid, "**Context:**");
-    await appendLine(cSec, String(context));
+    const ctx = getCtx();
+    await detachEditorFromBlockThenWrite(uid, ctx?.windowId || runtime.focusedWindow, async () => {
+        await trackedUpdateBlock(uid, "Right to Disagree::", true);
+    });
 
-    const other = await mustPrompt("State their position as fairly as possible (steelman it).", 1, "Right to Disagree");
-    const oSec = await ensureSection(uid, "**Their position (steelman):**");
-    await appendLine(oSec, String(other));
+    // Optional traceability line
+    const srcSec = await ensureSection(uid, "**Source:**");
+    await appendLine(srcSec, "Cortex Futura — adversarial reading / right to disagree");
 
-    const yours = await mustPrompt("State your position clearly (one paragraph).", 1, "Right to Disagree");
-    const ySec = await ensureSection(uid, "**Your position:**");
-    await appendLine(ySec, String(yours));
+    const claim = await mustPrompt(
+        "What claim, belief, or position are you disagreeing with?",
+        1,
+        "Right to Disagree"
+    );
 
-    const agree = await mustPrompt("What do you agree with (even partially)?", 1, "Right to Disagree");
-    const aSec = await ensureSection(uid, "**Points of agreement:**");
-    await appendLine(aSec, String(agree));
+    // (3) Standardize heading
+    const claimSec = await ensureSection(uid, "**Claim:**");
+    await appendLine(claimSec, claim);
 
-    const values = await mustPrompt("What values or goals are driving your view?", 1, "Right to Disagree");
-    const vSec = await ensureSection(uid, "**Underlying values/goals:**");
-    await appendLine(vSec, String(values));
+    const whySec = await ensureSection(uid, "**Why I disagree:**");
 
-    const evidenceSec = await ensureSection(uid, "**Evidence / reasons:**");
-    while (true) {
-        throwIfCancelled();
-        const r = await mustPrompt("Add one reason/evidence point for your view.", 1, "Right to Disagree");
-        await appendLine(evidenceSec, String(r));
-        const more = await mustPrompt("Add another reason?", 3, "Right to Disagree");
-        if (more !== "yes") break;
-    }
+    // (5) Small ergonomics: one-line instruction
+    await appendLine(whySec, "Sort your objections into the buckets below (add notes under each).");
 
-    const bridge = await mustPrompt("What would a reasonable compromise or ‘both can be true’ framing look like?", 1, "Right to Disagree");
-    const bSec = await ensureSection(uid, "**Bridge / compromise:**");
-    await appendLine(bSec, String(bridge));
+    // Cortex buckets
+    const missing = await trackedCreateBlock(whySec, "last", "Missing information?");
+    const wrong = await trackedCreateBlock(whySec, "last", "Wrong information?");
+    const reasoning = await trackedCreateBlock(whySec, "last", "Reasoning errors?");
+    const nonSeq = await trackedCreateBlock(reasoning, "last", "Non sequitur?");
+    const incons = await trackedCreateBlock(reasoning, "last", "Inconsistency?");
+    const incomplete = await trackedCreateBlock(whySec, "last", "Incomplete analysis?");
 
-    const ask = await mustPrompt("What do you want to ask for (a decision, a trial, data, a pause, etc.)?", 1, "Right to Disagree");
-    const askSec = await ensureSection(uid, "**Request / next step:**");
-    await appendLine(askSec, String(ask));
+    // (1) Make buckets immediately writable (create empty leaves)
+    const missingLeaf = await leaf(missing, { focus: true });
+    await leaf(wrong);
+    await leaf(nonSeq);
+    await leaf(incons);
+    await leaf(incomplete);
 
-    const draftSec = await ensureSection(uid, "**Draft message (calm + respectful):**");
-    const draftLeaf = await leaf(draftSec, { focus: true });
+    // Ensure focus lands on a writable spot
+    await safeSetFocus(missingLeaf);
+
+    // Optional “update condition” (recommended)
+    const changeSec = await ensureSection(uid, "**What would change my mind:**");
+    const changeLeaf = await leaf(changeSec);
+    await trackedUpdateBlock(changeLeaf, "Evidence/arguments: ", true);
+    // (Do not steal focus from the bucket triage by default)
+}
+
+// Right to Disagree (Deep)
+// Neutral, argument-focused, keeps steelman/crux/change-mind
+async function aot_right_to_disagree_deep(uid) {
+    throwIfCancelled();
+    forceCommitActiveEditor();
+
+    const ctx = getCtx();
+    await detachEditorFromBlockThenWrite(uid, ctx?.windowId || runtime.focusedWindow, async () => {
+        await trackedUpdateBlock(uid, "Right to Disagree (Deep)::", true);
+    });
+
+    // Optional traceability line
+    const srcSec = await ensureSection(uid, "**Mode:**");
+    await appendLine(srcSec, "Steelman → strongest challenge → crux → update condition → stance");
+
+    const claim = await mustPrompt(
+        "What claim, belief, or position is in dispute?",
+        1,
+        "Right to Disagree (Deep)"
+    );
+
+    // (3) Standardize heading
+    const claimSec = await ensureSection(uid, "**Claim:**");
+    await appendLine(claimSec, claim);
+
+    const steelman = await mustPrompt(
+        "Reconstruct the strongest version of the opposing position — as if you agreed with it.",
+        1,
+        "Right to Disagree (Deep)"
+    );
+    const steelSec = await ensureSection(uid, "**Strongest opposing case (steelman):**");
+    await appendLine(steelSec, steelman);
+
+    const objection = await mustPrompt(
+        "What is your main reason for disagreeing (in one sentence)?",
+        1,
+        "Right to Disagree (Deep)"
+    );
+    const objSec = await ensureSection(uid, "**Your main reason for disagreeing:**");
+    await appendLine(objSec, objection);
+
+    const strongestChallenge = await mustPrompt(
+        "What is the strongest point or evidence that challenges your position?",
+        1,
+        "Right to Disagree (Deep)"
+    );
+    const challengeSec = await ensureSection(uid, "**Strongest challenge to your view:**");
+    await appendLine(challengeSec, strongestChallenge);
+
+    const crux = await mustPrompt(
+        "What is the crux of disagreement (the key point where one of you must be wrong, or where different assumptions diverge)?",
+        1,
+        "Right to Disagree (Deep)"
+    );
+    const cruxSec = await ensureSection(uid, "**Crux of disagreement:**");
+    await appendLine(cruxSec, crux);
+
+    // (2) Add “Where does the disagreement live?” classifier (optional but implemented)
+    const whereSec = await ensureSection(uid, "**Where the disagreement lives:**");
+    await appendLine(whereSec, "Classify the disagreement (you can pick more than one):");
+    await trackedCreateBlock(whereSec, "last", "Missing information");
+    await trackedCreateBlock(whereSec, "last", "Wrong information");
+    await trackedCreateBlock(whereSec, "last", "Reasoning error");
+    await trackedCreateBlock(whereSec, "last", "Incomplete analysis");
+    await trackedCreateBlock(whereSec, "last", "Values / priorities");
+
+    const change = await mustPrompt(
+        "What evidence, argument, or observation would change your mind (or materially update your confidence)?",
+        1,
+        "Right to Disagree (Deep)"
+    );
+    const changeSec = await ensureSection(uid, "**What would change my mind:**");
+    await appendLine(changeSec, change);
+
+    const stanceSec = await ensureSection(uid, "**Provisional stance:**");
+    const stanceLeaf = await leaf(stanceSec, { focus: true });
     await trackedUpdateBlock(
-        draftLeaf,
-        `Thanks for sharing your view. I think you’re right about ${agree}. Where I see it differently is: ${yours}\n\nWhat I’m aiming for is: ${values}. Could we try: ${bridge}\n\nMy request: ${ask}`,
+        stanceLeaf,
+        "Given the above, where do you currently stand — and with what level of confidence?",
         true
     );
-    await safeSetFocus(draftLeaf);
+    await safeSetFocus(stanceLeaf);
 }
 
 // Six Thinking Hats
@@ -2156,6 +2574,73 @@ async function prompt(message, type, title, selectString, timer) {
                 transitionOutMobile: "fadeOutDown",
                 onClosed: function () {
                     resolve("completed cycle");
+                },
+            });
+        });
+    }
+
+    // ---------- type 6: timed text entry (textarea) ----------
+    // Returns the typed text when user confirms OR when timer elapses.
+    // Cancel / overlay / esc still returns null.
+    if (type === 6) {
+        return new Promise((resolve) => {
+            const done = once(resolve);
+
+            iziToast.question({
+                theme: "dark",
+                color: "",
+                layout: 2,
+                drag: false,
+                timeout: typeof timer === "number" ? timer : 180000, // default 3 min
+                close: false,
+                overlay: true,
+                overlayClose: true,
+                closeOnEscape: true,
+                displayMode: 2,
+                id: toastId,
+                title,
+                message,
+                position: "center",
+                progressBar: true,
+                inputs: [
+                    [
+                        '<textarea rows = "6" style = "min-width:400px; min-height:220px; resize:vertical; font-size:14px; line-height:1.4;"placeholder = "Type here..."></textarea >', "keyup",
+                        function (instance, toast, input, e) {
+                            // Ctrl/Cmd+Enter submits quickly
+                            if ((e.ctrlKey || e.metaKey) && e.code === "Enter") {
+                                instance.hide({ transitionOut: "fadeOut" }, toast, "button");
+                                done(input.value);
+                            }
+                        },
+                        true,
+                    ],
+                ],
+                buttons: [
+                    [
+                        "<button><b>Save</b></button>",
+                        function (instance, toast, button, e, inputs) {
+                            instance.hide({ transitionOut: "fadeOut" }, toast, "button");
+                            done(inputs?.[0]?.value ?? "");
+                        },
+                        false,
+                    ],
+                    [
+                        "<button>Cancel</button>",
+                        function (instance, toast) {
+                            instance.hide({ transitionOut: "fadeOut" }, toast, "button");
+                            cancel(done);
+                        },
+                    ],
+                ],
+                onClosed: function (instance, toast, closedBy) {
+                    // If it was closed by timeout, treat it as "Save what you typed"
+                    if (closedBy === "timeout") {
+                        const ta = toast?.querySelector?.("textarea");
+                        done(ta?.value ?? "");
+                        return;
+                    }
+                    // If it was closed by esc/overlay, treat as cancel unless already resolved
+                    if (closedBy === "esc" || closedBy === "overlay") cancel(done);
                 },
             });
         });
