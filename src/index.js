@@ -1,1627 +1,1976 @@
 import iziToast from "izitoast";
-var focusedWindow;
+
+const NS = "[AOT]";
+
+// -------------------- RUNTIME STATE --------------------
+
+const runtime = {
+    focusedWindow: null,
+    running: false,
+    smartblocksLoadedHandler: null,
+    ctx: null,
+};
+
+// -------------------- SETTINGS --------------------
+
+const SETTING_CANCEL_CLEANUP = "cancel_cleanup_mode";
+const DEFAULT_CANCEL_CLEANUP = true;
+
+function normalizeBoolean(v, fallback = false) {
+    if (v === true || v === "true" || v === 1 || v === "1") return true;
+    if (v === false || v === "false" || v === 0 || v === "0") return false;
+    return fallback;
+}
+
+function getCancelCleanupEnabled(extensionAPI) {
+    try {
+        const v = extensionAPI?.settings?.get?.(SETTING_CANCEL_CLEANUP);
+        return normalizeBoolean(v, DEFAULT_CANCEL_CLEANUP);
+    } catch (e) {
+        return DEFAULT_CANCEL_CLEANUP;
+    }
+}
+
+function ensureDefaultSettings(extensionAPI) {
+    try {
+        const existing = extensionAPI?.settings?.get?.(SETTING_CANCEL_CLEANUP);
+        if (existing === null || existing === undefined) {
+            extensionAPI?.settings?.set?.(SETTING_CANCEL_CLEANUP, DEFAULT_CANCEL_CLEANUP);
+        }
+    } catch (e) {
+        // non-fatal
+    }
+}
+
+function createSettingsPanel(extensionAPI) {
+    try {
+        extensionAPI.settings.panel.create({
+            tabTitle: "AOT",
+            settings: [
+                {
+                    id: SETTING_CANCEL_CLEANUP,
+                    name: "Cancel cleanup mode",
+                    description:
+                        "If you cancel a workflow, automatically remove blocks created during this run and restore the starting block text.",
+                    action: {
+                        type: "switch",
+                        onChange: (v) => {
+                            const checked = typeof v === "boolean" ? v : !!v?.target?.checked;
+                            extensionAPI.settings.set(SETTING_CANCEL_CLEANUP, checked);
+                        },
+                    },
+                },
+            ],
+        });
+    } catch (e) {
+        console.warn(`${NS} Could not create settings panel:`, e);
+    }
+}
+
+// -------------------- LOGGING / TOASTS --------------------
+
+function log(level, ...args) {
+    const fn = console?.[level] || console.log;
+    try {
+        fn(NS, ...args);
+    } catch (e) {
+        // ignore
+    }
+}
+
+function toastInfo(message, title = "AOT") {
+    try {
+        iziToast.info({
+            theme: "dark",
+            color: "",
+            title,
+            message,
+            position: "center",
+            timeout: 2500,
+            closeOnClick: true,
+        });
+    } catch (e) {
+        log("log", title, message);
+    }
+}
+
+function toastWarn(message, title = "AOT") {
+    try {
+        iziToast.warning({
+            theme: "dark",
+            color: "",
+            title,
+            message,
+            position: "center",
+            timeout: 3500,
+            closeOnClick: true,
+        });
+    } catch (e) {
+        log("warn", title, message);
+    }
+}
+
+// -------------------- SAFETY HELPERS --------------------
+
+function safeUid(u) {
+    const s = String(u ?? "");
+    return /^[a-zA-Z0-9_-]{6,}$/.test(s) ? s : "";
+}
+
+function escapeHtml(str) {
+    return String(str ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
+function safeBlurActiveElement() {
+    try {
+        document.activeElement?.blur?.();
+    } catch (e) {
+        // ignore
+    }
+}
+
+function forceCommitActiveEditor() {
+    try {
+        const ae = document.activeElement;
+        if (!ae) return;
+
+        // Only intervene if we're actually in a Roam editor
+        const isEditor = ae.tagName === "TEXTAREA" || ae.getAttribute?.("contenteditable") === "true";
+        if (!isEditor) return;
+
+        // 1. Blur (cheap)
+        ae.blur?.();
+
+        // 2. Real pointer event (forces Roam commit)
+        document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+        document.body.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+        document.body.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    } catch (e) {
+        // non-fatal
+    }
+}
+
+// -------------------- RAILS / FOCUS HELPERS --------------------
+
+function getFocus() {
+    const fb = window.roamAlphaAPI?.ui?.getFocusedBlock?.();
+    const uid = fb?.["block-uid"];
+    const windowId = fb?.["window-id"];
+    return { uid: safeUid(uid) || null, windowId: windowId || null };
+}
+
+async function readParentUid(uid) {
+    const u = safeUid(uid);
+    if (!u) return null;
+    try {
+        const q = await window.roamAlphaAPI.q(
+            `[:find ?puid .
+              :where
+              [?b :block/uid "${u}"]
+              [?b :block/parents ?p]
+              [?p :block/uid ?puid]]`
+        );
+        return safeUid(q) || null;
+    } catch (e) {
+        return null;
+    }
+}
+
+async function safeRefocus(blockUid, windowId) {
+    const uid = safeUid(blockUid);
+    const wid = windowId || runtime.focusedWindow;
+    if (!uid || !wid) return;
+    try {
+        runtime.focusedWindow = wid;
+        await window.roamAlphaAPI.ui.setBlockFocusAndSelection({
+            location: { "block-uid": uid, "window-id": wid },
+        });
+    } catch (e) {
+        log("warn", "Could not refocus:", e);
+    }
+}
+
+async function safeSetFocus(blockUid) {
+    const uid = safeUid(blockUid);
+    if (!uid) return;
+
+    const ctx = getCtx();
+    if (!runtime.focusedWindow) runtime.focusedWindow = ctx?.windowId || runtime.focusedWindow;
+
+    if (!runtime.focusedWindow) {
+        const { windowId } = getFocus();
+        runtime.focusedWindow = windowId || runtime.focusedWindow;
+    }
+
+    if (!runtime.focusedWindow) return;
+
+    try {
+        await window.roamAlphaAPI.ui.setBlockFocusAndSelection({
+            location: { "block-uid": uid, "window-id": runtime.focusedWindow },
+        });
+    } catch (e) {
+        log("warn", "Could not set focus:", e);
+    }
+}
+
+async function forceEditorRepaint(rootUid, windowId) {
+    try {
+        forceCommitActiveEditor();
+        await new Promise((r) => setTimeout(r, 0));
+
+        const parentUid = await readParentUid(rootUid);
+        if (parentUid && parentUid !== rootUid) {
+            await safeRefocus(parentUid, windowId);
+            await new Promise((r) => setTimeout(r, 0));
+        }
+
+        await safeRefocus(rootUid, windowId);
+    } catch (e) {
+        // non-fatal
+    }
+}
+
+async function detachEditorFromBlockThenWrite(rootUid, windowId, writeFn) {
+    const uid = safeUid(rootUid);
+    if (!uid) return writeFn();
+
+    try {
+        // Move focus to parent (best) to force Roam to commit editor buffer elsewhere
+        const parentUid = await readParentUid(uid);
+        if (parentUid && parentUid !== uid) {
+            await safeRefocus(parentUid, windowId);
+            await new Promise((r) => setTimeout(r, 0));
+        } else {
+            // Fallback: blur + body click
+            safeBlurActiveElement();
+            document.body?.click?.();
+            await new Promise((r) => setTimeout(r, 0));
+        }
+    } catch (e) {
+        // non-fatal
+    }
+
+    // Write while root is NOT the active editor
+    const out = await writeFn();
+
+    // Repaint to reconcile UI
+    try {
+        await forceEditorRepaint(uid, windowId);
+    } catch (e) {
+        // ignore
+    }
+
+    return out;
+}
+
+// -------------------- RUN CONTEXT + CANCEL CLEANUP --------------------
+
+let CURRENT_CTX = null;
+
+function getCtx() {
+    return CURRENT_CTX;
+}
+
+// Sentinel for clean cancellation (no error toast)
+const AOT_CANCELLED = Symbol("AOT_CANCELLED");
+
+function throwIfCancelled() {
+    const ctx = getCtx();
+    if (ctx?.cancelled) throw AOT_CANCELLED;
+}
+
+function markCancelled() {
+    const ctx = getCtx();
+    if (ctx) ctx.cancelled = true;
+}
+
+async function mustPrompt(...args) {
+    const v = await prompt(...args);
+    if (v == null) {
+        markCancelled();
+        throw AOT_CANCELLED;
+    }
+    return v;
+}
+
+async function readBlockString(uid) {
+    const u = safeUid(uid);
+    if (!u) return "";
+    try {
+        const q = await window.roamAlphaAPI.q(`[:find (pull ?b [:block/string :block/uid]) :where [?b :block/uid "${u}"]]`);
+        return q?.[0]?.[0]?.string ?? "";
+    } catch (e) {
+        return "";
+    }
+}
+
+async function setBlockString(uid, string, open = true) {
+    const u = safeUid(uid);
+    if (!u) return;
+    return window.roamAlphaAPI.updateBlock({
+        block: { uid: u, string: String(string ?? ""), open: !!open },
+    });
+}
+
+async function initRootContext(ctx, { uid, windowId, originalStringOverride } = {}) {
+    if (!ctx) return;
+
+    const u = uid ? safeUid(uid) : null;
+
+    // rootUid set exactly once
+    if (!ctx.rootUid) {
+        ctx.rootUid = u || null;
+    } else if (u && ctx.rootUid !== u) {
+        log("warn", "rootUid already set; refusing to change", { existing: ctx.rootUid, attempted: u });
+    }
+
+    // windowId: prefer first good value
+    if (windowId && !ctx.windowId) ctx.windowId = windowId;
+
+    // capture original root string exactly once
+    if (ctx.rootUid && (ctx.rootOriginalString === null || ctx.rootOriginalString === undefined)) {
+        if (originalStringOverride !== undefined) {
+            ctx.rootOriginalString = String(originalStringOverride ?? "");
+        } else {
+            ctx.rootOriginalString = await readBlockString(ctx.rootUid);
+        }
+    }
+}
+
+async function countChildren(parentUid) {
+    const p = safeUid(parentUid);
+    if (!p) return 0;
+    try {
+        const q = await window.roamAlphaAPI.q(
+            `[:find (count ?c) .
+              :where
+              [?p :block/uid "${p}"]
+              [?p :block/children ?c]]`
+        );
+        const n = Number(q);
+        return Number.isFinite(n) && n >= 0 ? n : 0;
+    } catch (e) {
+        return 0;
+    }
+}
+
+async function trackedUpdateBlock(uid, string, open = true) {
+    throwIfCancelled();
+    const u = safeUid(uid);
+    if (!u) return;
+
+    return window.roamAlphaAPI.updateBlock({
+        block: { uid: u, string: String(string ?? ""), open: !!open },
+    });
+}
+
+async function trackedCreateBlock(parentUid, order, string, uid) {
+    throwIfCancelled();
+
+    const ctx = getCtx();
+    const parent = safeUid(parentUid);
+    if (!parent) return null;
+
+    const blockUid = safeUid(uid) || window.roamAlphaAPI.util.generateUID();
+    if (ctx) ctx.createdUids.push(blockUid);
+
+    let ord = order;
+    if (ord === null || ord === undefined || ord === "last") {
+        ord = await countChildren(parent);
+    }
+
+    try {
+        await window.roamAlphaAPI.createBlock({
+            location: { "parent-uid": parent, order: ord },
+            block: { string: String(string ?? ""), uid: blockUid },
+        });
+        return blockUid;
+    } catch (e) {
+        // One retry with refreshed order (cheap race hardening)
+        try {
+            const retryOrd = await countChildren(parent);
+            await window.roamAlphaAPI.createBlock({
+                location: { "parent-uid": parent, order: retryOrd },
+                block: { string: String(string ?? ""), uid: blockUid },
+            });
+            return blockUid;
+        } catch (e2) {
+            log("warn", "createBlock failed:", e2);
+            throw e2;
+        }
+    }
+}
+
+async function safeDeleteBlock(uid) {
+    const u = safeUid(uid);
+    if (!u) return;
+
+    // Prefer deleteBlock if available; otherwise blank it.
+    try {
+        if (typeof window.roamAlphaAPI.deleteBlock === "function") {
+            await window.roamAlphaAPI.deleteBlock({ block: { uid: u } });
+            return;
+        }
+    } catch (e) {
+        // fall through
+    }
+    try {
+        await window.roamAlphaAPI.updateBlock({ block: { uid: u, string: "" } });
+    } catch (e) {
+        // ignore
+    }
+}
+
+async function deleteCreatedBlocks(ctx) {
+    const uids = Array.from(new Set(ctx?.createdUids || []));
+    for (let i = uids.length - 1; i >= 0; i--) {
+        const uid = safeUid(uids[i]);
+        if (uid && uid !== ctx.rootUid) {
+            await safeDeleteBlock(uid);
+        }
+    }
+}
+
+async function cancelCleanup(ctx) {
+    try {
+        await deleteCreatedBlocks(ctx);
+
+        if (ctx?.rootUid) {
+            const restore = ctx.rootOriginalString !== null && ctx.rootOriginalString !== undefined ? ctx.rootOriginalString : "";
+            await setBlockString(ctx.rootUid, restore, true);
+            await forceEditorRepaint(ctx.rootUid, ctx.windowId);
+        }
+    } catch (e) {
+        log("error", "cancelCleanup failed", e);
+    }
+}
+
+async function runAOT(extensionAPI, fn, { allowParallel = false, launchWindowId = null } = {}) {
+    if (!allowParallel && runtime.running) {
+        toastWarn("An AOT workflow is already running. Finish it first (or cancel it).");
+        return;
+    }
+
+    const ctx = {
+        cancelled: false,
+        createdUids: [],
+        rootUid: null,
+        rootOriginalString: null,
+        windowId: launchWindowId || null,
+    };
+
+    runtime.running = true;
+    CURRENT_CTX = ctx;
+
+    try {
+        await fn(ctx);
+    } catch (e) {
+        if (e === AOT_CANCELLED) {
+            // noop
+        } else {
+            log("error", "Workflow error:", e);
+            toastWarn("Something went wrong running this AOT. Check console for details.", "AOT Error");
+        }
+    } finally {
+        try {
+            if (ctx.cancelled) toastInfo("Cancelled");
+            if (ctx.cancelled && getCancelCleanupEnabled(extensionAPI)) {
+                await cancelCleanup(ctx);
+            }
+        } finally {
+            CURRENT_CTX = null;
+            runtime.running = false;
+        }
+    }
+}
+
+// -------------------- SELECT BUILDER (SAFE) --------------------
+
+function buildSelectFromOptions(options) {
+    const safe = Array.isArray(options) ? options : [];
+    let html = '<select><option value="">Select</option>';
+    for (const opt of safe) {
+        const value = safeUid(opt?.value);
+        const label = escapeHtml(opt?.label ?? "");
+        html += `<option value="${value}">${label}</option>`;
+    }
+    html += "</select>";
+    return html;
+}
+
+// -------------------- MINI DSL HELPERS --------------------
+// 1) appendLine(parentUid, text)
+// 2) ensureSection(rootUid, "**Title:**") -> returns section uid
+// 3) chooseChild(parentUid, title, message) -> returns chosen child uid
+// 4) leaf(parentUid) -> creates empty child + focuses it
+
+async function setRootHeading(rootUid, heading, open = true) {
+    const uid = safeUid(rootUid);
+    if (!uid) return;
+
+    const ctx = getCtx();
+    const wid = ctx?.windowId || runtime.focusedWindow || null;
+
+    await detachEditorFromBlockThenWrite(uid, wid, async () => {
+        await trackedUpdateBlock(uid, String(heading ?? ""), !!open);
+    });
+    document.querySelector("body")?.click();
+}
+
+async function appendLine(parentUid, text, order = "last") {
+    return trackedCreateBlock(parentUid, order, String(text ?? ""));
+}
+
+async function ensureSection(rootUid, label, { order = "last" } = {}) {
+    const root = safeUid(rootUid);
+    if (!root) return null;
+
+    try {
+        const q = await window.roamAlphaAPI.q(
+            `[:find (pull ?p [:block/uid {:block/children [:block/uid :block/string]}]) .
+              :where
+              [?p :block/uid "${root}"]]`
+        );
+        const children = q?.children || [];
+        const found = children.find((c) => String(c?.string ?? "") === String(label ?? ""));
+        const foundUid = safeUid(found?.uid);
+        if (foundUid) return foundUid;
+    } catch (e) {
+        // fall through to create
+    }
+
+    const newUid = window.roamAlphaAPI.util.generateUID();
+    await trackedCreateBlock(root, order, String(label ?? ""), newUid);
+    return newUid;
+}
+
+async function chooseChild(parentUid, title, message) {
+    const parent = safeUid(parentUid);
+    if (!parent) return null;
+
+    const q = await window.roamAlphaAPI.q(
+        `[:find (pull ?p [:block/uid {:block/children [:block/uid :block/string]}]) .
+          :where
+          [?p :block/uid "${parent}"]]`
+    );
+
+    const children = q?.children || [];
+    const options = children
+        .map((c) => ({
+            value: safeUid(c?.uid),
+            label: String(c?.string ?? "").trim() || "(empty)",
+        }))
+        .filter((o) => !!o.value);
+
+    if (!options.length) return null;
+
+    const selectString = buildSelectFromOptions(options);
+    const picked = await mustPrompt(message, 2, title, selectString);
+    return safeUid(picked) || null;
+}
+
+async function leaf(parentUid, { order = "last", focus = true } = {}) {
+    const uid = window.roamAlphaAPI.util.generateUID();
+    const created = await trackedCreateBlock(parentUid, order, "", uid);
+    if (focus && created) await safeSetFocus(created);
+    return created;
+}
+
+// -------------------- EXTENSION --------------------
 
 export default {
     onload: ({ extensionAPI }) => {
-        // TODO: config for output as attributes
+        ensureDefaultSettings(extensionAPI);
+        createSettingsPanel(extensionAPI);
 
-        // https://www.zsolt.blog/2020/12/de-bonos-algorithms-of-thought-for_8.html
-        extensionAPI.ui.commandPalette.addCommand({
-            label: "AOT - Agreement, Disagreement and Irrelevance",
-            callback: () => {
-                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
-                if (uid == undefined) {
-                    alert("Please make sure to focus a block before starting an AOT");
-                    return;
-                } else {
-                    window.roamAlphaAPI.updateBlock(
-                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
-                    aot_adi(uid);
-                }
-            }
-        });
+        const registerPalette = (label, fn) => {
+            extensionAPI.ui.commandPalette.addCommand({
+                label,
+                callback: () => {
+                    // Let palette close + focus restore before reading focus
+                    setTimeout(() => {
+                        const { uid, windowId } = getFocus();
+                        const launchWindowId = windowId || runtime.focusedWindow || null;
+                        if (launchWindowId) runtime.focusedWindow = launchWindowId;
 
-        /*
-        // https://www.debono.com/de-bono-thinking-lessons-1/4.-AGO-lesson-plan
-        extensionAPI.ui.commandPalette.addCommand({
-            label: "AOT - Aims, Goals, Objectives",
-            callback: () => {
-                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
-                if (uid == undefined) {
-                    alert("Please make sure to focus a block before starting an AOT");
-                    return;
-                } else {
-                    window.roamAlphaAPI.updateBlock(
-                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
-                    aot_ago(uid);
-                }
-            }
-        });
-        */
-        // https://www.debono.com/de-bono-thinking-lessons-1/6.-APC-lesson-plan
-        extensionAPI.ui.commandPalette.addCommand({
-            label: "AOT - Alternatives, Possibilities, Choices",
-            callback: () => {
-                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
-                if (uid == undefined) {
-                    alert("Please make sure to focus a block before starting an AOT");
-                    return;
-                } else {
-                    window.roamAlphaAPI.updateBlock(
-                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
-                    aot_apc(uid);
-                }
-            }
-        });
-        extensionAPI.ui.commandPalette.addCommand({
-            label: "AOT - Assumptions X-ray",
-            callback: () => {
-                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
-                if (uid == undefined) {
-                    alert("Please make sure to focus a block before starting an AOT");
-                    return;
-                } else {
-                    window.roamAlphaAPI.updateBlock(
-                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
-                    aot_ax(uid);
-                }
-            }
-        });
-        extensionAPI.ui.commandPalette.addCommand({
-            label: "AOT - Basic Decision",
-            callback: () => {
-                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
-                if (uid == undefined) {
-                    alert("Please make sure to focus a block before starting an AOT");
-                    return;
-                } else {
-                    window.roamAlphaAPI.updateBlock(
-                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
-                    aot_bd(uid);
-                }
-            }
-        });
-        extensionAPI.ui.commandPalette.addCommand({
-            label: "AOT - Simple Choice",
-            callback: () => {
-                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
-                if (uid == undefined) {
-                    alert("Please make sure to focus a block before starting an AOT");
-                    return;
-                } else {
-                    window.roamAlphaAPI.updateBlock(
-                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
-                }
-                aot_choice(uid);
-            }
-        });
-        /*
-        // https://www.debono.com/de-bono-thinking-lessons-1/3.-C%26S-lesson-plan
-        extensionAPI.ui.commandPalette.addCommand({
-            label: "AOT - Consequence and Sequel",
-            callback: () => {
-                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
-                if (uid == undefined) {
-                    alert("Please make sure to focus a block before starting an AOT");
-                    return;
-                } else {
-                    window.roamAlphaAPI.updateBlock(
-                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
-                }
-                aot_cs(uid);
-            }
-        });
-        */
-        // https://www.debono.com/de-bono-thinking-lessons-1/2.-CAF-lesson-plan
-        extensionAPI.ui.commandPalette.addCommand({
-            label: "AOT - Consider All Factors",
-            callback: () => {
-                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
-                if (uid == undefined) {
-                    alert("Please make sure to focus a block before starting an AOT");
-                    return;
-                } else {
-                    window.roamAlphaAPI.updateBlock(
-                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
-                }
-                aot_caf(uid);
-            }
-        });
-        /*
-        extensionAPI.ui.commandPalette.addCommand({
-            label: "AOT - Design/Decision, Outcome, Channels, Action",
-            callback: () => {
-                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
-                if (uid == undefined) {
-                    alert("Please make sure to focus a block before starting an AOT");
-                    return;
-                } else {
-                    window.roamAlphaAPI.updateBlock(
-                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
-                }
-                aot_doca(uid);
-            }
-        });
-        */
-        extensionAPI.ui.commandPalette.addCommand({
-            label: "AOT - Difference Engine",
-            callback: () => {
-                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
-                if (uid == undefined) {
-                    alert("Please make sure to focus a block before starting an AOT");
-                    return;
-                } else {
-                    window.roamAlphaAPI.updateBlock(
-                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
-                    aot_de(uid);
-                }
-            }
-        });
-        /*
-        // https://www.zsolt.blog/2020/12/de-bonos-algorithms-of-thought-for_8.html
-        extensionAPI.ui.commandPalette.addCommand({
-            label: "AOT - Examine Both Sides",
-            callback: () => {
-                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
-                if (uid == undefined) {
-                    alert("Please make sure to focus a block before starting an AOT");
-                    return;
-                } else {
-                    window.roamAlphaAPI.updateBlock(
-                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
-                }
-                aot_ebs(uid);
-            }
-        });
-        */
-        /*
-        extensionAPI.ui.commandPalette.addCommand({
-            label: "AOT - First Important Priorities",
-            callback: () => {
-                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
-                if (uid == undefined) {
-                    alert("Please make sure to focus a block before starting an AOT");
-                    return;
-                } else {
-                    window.roamAlphaAPI.updateBlock(
-                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
-                }
-                aot_fip(uid);
-            }
-        });
-        */
-        /*
-        extensionAPI.ui.commandPalette.addCommand({
-            label: "AOT - Five Whys",
-            callback: () => {
-                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
-                if (uid == undefined) {
-                    alert("Please make sure to focus a block before starting an AOT");
-                    return;
-                } else {
-                    window.roamAlphaAPI.updateBlock(
-                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
-                }
-                aot_fw(uid);
-            }
-        });
-        */
-        /*
-        extensionAPI.ui.commandPalette.addCommand({
-            label: "AOT - Issue Log",
-            callback: () => {
-                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
-                if (uid == undefined) {
-                    alert("Please make sure to focus a block before starting an AOT");
-                    return;
-                } else {
-                    window.roamAlphaAPI.updateBlock(
-                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
-                }
-                aot_il(uid);
-            }
-        });
-        */
-        extensionAPI.ui.commandPalette.addCommand({
-            label: "AOT - Next Action",
-            callback: () => {
-                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
-                if (uid == undefined) {
-                    alert("Please make sure to focus a block before starting an AOT");
-                    return;
-                } else {
-                    window.roamAlphaAPI.updateBlock(
-                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
-                    aot_na(uid);
-                }
-            }
-        });
-        /*
-        // https://www.debono.com/de-bono-thinking-lessons-1/7.-OPV-lesson-plan
-        extensionAPI.ui.commandPalette.addCommand({
-            label: "AOT - Other People's Views",
-            callback: () => {
-                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
-                if (uid == undefined) {
-                    alert("Please make sure to focus a block before starting an AOT");
-                    return;
-                } else {
-                    window.roamAlphaAPI.updateBlock(
-                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
-                    aot_opv(uid);
-                }
-            }
-        });
-        */
-        /*
-        extensionAPI.ui.commandPalette.addCommand({
-            label: "AOT - Pain Button",
-            callback: () => {
-                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
-                if (uid == undefined) {
-                    alert("Please make sure to focus a block before starting an AOT");
-                    return;
-                } else {
-                    window.roamAlphaAPI.updateBlock(
-                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
-                }
-                aot_pb(uid);
-            }
-        });
-        */
-        extensionAPI.ui.commandPalette.addCommand({
-            label: "AOT - Plus, Minus and Interesting",
-            callback: () => {
-                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
-                if (uid == undefined) {
-                    alert("Please make sure to focus a block before starting an AOT");
-                    return;
-                } else {
-                    window.roamAlphaAPI.updateBlock(
-                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
-                    aot_pmi(uid);
-                }
-            }
-        });
-        /*
-        extensionAPI.ui.commandPalette.addCommand({
-            label: "AOT - REALLY?",
-            callback: () => {
-                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
-                if (uid == undefined) {
-                    alert("Please make sure to focus a block before starting an AOT");
-                    return;
-                } else {
-                    window.roamAlphaAPI.updateBlock(
-                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
-                }
-                aot_really(uid);
-            }
-        });
-        */
-        /*
-        extensionAPI.ui.commandPalette.addCommand({
-            label: "AOT - REAPPRAISED",
-            callback: () => {
-                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
-                if (uid == undefined) {
-                    alert("Please make sure to focus a block before starting an AOT");
-                    return;
-                } else {
-                    window.roamAlphaAPI.updateBlock(
-                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
-                }
-                aot_reappraised(uid);
-            }
-        });
-        */
-        /*
-        extensionAPI.ui.commandPalette.addCommand({
-            label: "AOT - Recognise, Analyse, Divide",
-            callback: () => {
-                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
-                if (uid == undefined) {
-                    alert("Please make sure to focus a block before starting an AOT");
-                    return;
-                } else {
-                    window.roamAlphaAPI.updateBlock(
-                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
-                }
-                aot_rad(uid);
-            }
-        });
-        */
-        /*
-        extensionAPI.ui.commandPalette.addCommand({
-            label: "AOT - Regret Minimisation",
-            callback: () => {
-                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
-                if (uid == undefined) {
-                    alert("Please make sure to focus a block before starting an AOT");
-                    return;
-                } else {
-                    window.roamAlphaAPI.updateBlock(
-                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
-                }
-                aot_rm(uid);
-            }
-        });
-        */
-        /*
-        extensionAPI.ui.commandPalette.addCommand({
-            label: "AOT - Right to Disagree",
-            callback: () => {
-                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
-                if (uid == undefined) {
-                    alert("Please make sure to focus a block before starting an AOT");
-                    return;
-                } else {
-                    window.roamAlphaAPI.updateBlock(
-                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
-                }
-                aot_rtd(uid);
-            }
-        });
-        */
-        /*
-        extensionAPI.ui.commandPalette.addCommand({
-            label: "AOT - SWOT analysis",
-            callback: () => {
-                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
-                if (uid == undefined) {
-                    alert("Please make sure to focus a block before starting an AOT");
-                    return;
-                } else {
-                    window.roamAlphaAPI.updateBlock(
-                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
-                }
-                aot_swot(uid);
-            }
-        });
-        */
+                        if (!uid) {
+                            alert("Please make sure to focus a block before starting an AOT");
+                            return;
+                        }
 
-        // https://www.zsolt.blog/2020/12/tosca-pattern-for-framing-problems.html
-        extensionAPI.ui.commandPalette.addCommand({
-            label: "AOT - TOSCA",
-            callback: () => {
-                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
-                if (uid == undefined) {
-                    alert("Please make sure to focus a block before starting an AOT");
-                    return;
-                } else {
-                    window.roamAlphaAPI.updateBlock(
-                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
-                }
-                aot_tosca(uid);
-            }
-        });
-        extensionAPI.ui.commandPalette.addCommand({
-            label: "AOT - Want, Impediment, Remedy",
-            callback: () => {
-                const uid = window.roamAlphaAPI.ui.getFocusedBlock()?.["block-uid"];
-                if (uid == undefined) {
-                    alert("Please make sure to focus a block before starting an AOT");
-                    return;
-                } else {
-                    window.roamAlphaAPI.updateBlock(
-                        { block: { uid: uid, string: "Loading...".toString(), open: true } });
-                    aot_wir(uid);
-                }
-            }
+                        if (!launchWindowId) {
+                            toastWarn("Could not determine windowId (focus restore may not work).", "AOT");
+                        }
+
+                        runAOT(
+                            extensionAPI,
+                            async (ctx) => {
+                                await initRootContext(ctx, { uid, windowId: launchWindowId || null });
+                                await fn(uid);
+                            },
+                            { launchWindowId }
+                        );
+                    }, 0);
+                },
+            });
+        };
+
+        // Registry (keeps palette + SmartBlocks aligned)
+        const AOTS = [
+            { palette: "AOT - Aims, Goals, Objectives (AGO)", sb: "AOTAGO", fn: aot_ago },
+            { palette: "AOT - Agreement, Disagreement and Irrelevance", sb: "AOTADI", fn: aot_adi },
+            { palette: "AOT - Alternatives, Possibilities, Choices", sb: "AOTAPC", fn: aot_apc },
+            { palette: "AOT - Assumptions X-ray", sb: "AOTAX", fn: aot_ax },
+            { palette: "AOT - Basic Decision", sb: "AOTBASICDECISION", fn: aot_bd },
+            { palette: "AOT - Consequence and Sequel (C&S)", sb: "AOTCS", fn: aot_cs },
+            { palette: "AOT - Consider All Factors", sb: "AOTCAF", fn: aot_caf },
+            { palette: "AOT - Design/Decision, Outcome, Channels, Action (DODCA)", sb: "AOTDODCA", fn: aot_dodca },
+            { palette: "AOT - Difference Engine", sb: "AOTDIFFERENCE", fn: aot_de },
+            { palette: "AOT - Examine Both Sides (EBS)", sb: "AOTEBS", fn: aot_ebs },
+            { palette: "AOT - First Important Priorities", sb: "AOTFIP", fn: aot_fip },
+            { palette: "AOT - Five Whys", sb: "AOTFIVEWHYS", fn: aot_five_whys },
+            // { palette: "AOT - Issue Log", sb: "AOTISSUELOG", fn: aot_issue_log },
+            { palette: "AOT - Next Action", sb: "AOTNEXTACTION", fn: aot_na },
+            // { palette: "AOT - Other People's Views", sb: "AOTOPV", fn: aot_opv },
+            { palette: "AOT - Plus, Minus and Interesting", sb: "AOTPMI", fn: aot_pmi },
+            { palette: "AOT - Recognise, Analyse, Divide", sb: "AOTRAD", fn: aot_rad },
+            { palette: "AOT - Regret Minimisation", sb: "AOTREGRET", fn: aot_regret_min },
+            { palette: "AOT - Right to Disagree", sb: "AOTRTD", fn: aot_right_to_disagree },
+            { palette: "AOT - Simple Choice", sb: "AOTCHOICE", fn: aot_choice },
+            { palette: "AOT - Six Thinking Hats", sb: "AOTSIXHATS", fn: aot_six_hats },
+            { palette: "AOT - SWOT Analysis", sb: "AOTSWOT", fn: aot_swot },
+            { palette: "AOT - TOSCA", sb: "AOTTOSCA", fn: aot_tosca },
+            { palette: "AOT - Want, Impediment, Remedy", sb: "AOTWANT", fn: aot_wir },
+        ];
+
+        // Palette commands
+        AOTS.forEach((a) => registerPalette(a.palette, a.fn));
+
+        // ---- SmartBlocks commands ----
+        const mkSmartblocksCmd = (text, help, fn) => ({
+            text,
+            help,
+            handler: (context) => () => {
+                const uid = safeUid(context?.currentUid);
+
+                // Capture window-id immediately (before overlay steals focus)
+                const { windowId: nowWindowId } = getFocus();
+                const launchWindowId = context?.windowId || nowWindowId || runtime.focusedWindow || null;
+
+                if (launchWindowId) runtime.focusedWindow = launchWindowId;
+
+                setTimeout(() => {
+                    runAOT(
+                        extensionAPI,
+                        async (ctx) => {
+                            if (!uid) {
+                                toastWarn("No currentUid from SmartBlocks context.", "AOT");
+                                return;
+                            }
+
+                            await initRootContext(ctx, {
+                                uid,
+                                windowId: launchWindowId || null,
+                                originalStringOverride: "", // SB placeholder should always restore to ""
+                            });
+
+                            await fn(uid);
+                        },
+                        { launchWindowId }
+                    );
+                }, 0);
+
+                // overwrite any SmartBlocks placeholder/heading text immediately
+                return "";
+            },
         });
 
-        const args = {
-            text: "AOTBASICDECISION",
-            help: "AOT - Basic Decision",
-            handler: (context) => () => {
-                let uid = context.currentUid;
-                aot_bd(uid);
-                return "";
-            }
+        const cmds = AOTS.map((a) => mkSmartblocksCmd(a.sb, a.palette, a.fn));
+
+        const registerAllSmartblocks = () => {
+            if (!window.roamjs?.extension?.smartblocks) return false;
+            cmds.forEach((c) => window.roamjs.extension.smartblocks.registerCommand(c));
+            return true;
         };
-        const args1 = {
-            text: "AOTNEXTACTION",
-            help: "AOT - Next Action",
-            handler: (context) => () => {
-                let uid = context.currentUid;
-                aot_na(uid);
-                return "";
-            }
-        };
-        const args2 = {
-            text: "AOTWANT",
-            help: "AOT - Want, Impediment, Remedy",
-            handler: (context) => () => {
-                let uid = context.currentUid;
-                aot_wir(uid);
-                return "";
-            }
-        };
-        const args3 = {
-            text: "AOTDIFFERENCE",
-            help: "AOT - Difference Engine",
-            handler: (context) => () => {
-                let uid = context.currentUid;
-                aot_de(uid);
-                return "";
-            }
-        };
-        const args4 = {
-            text: "AOTPMI",
-            help: "AOT - Plus, Minus and Interesting",
-            handler: (context) => () => {
-                let uid = context.currentUid;
-                aot_pmi(uid);
-                return "";
-            }
-        };
-        const args5 = {
-            text: "AOTTOSCA",
-            help: "AOT - TOSCA",
-            handler: (context) => () => {
-                let uid = context.currentUid;
-                aot_tosca(uid);
-                return "";
-            }
-        };
-        const args6 = {
-            text: "AOTAX",
-            help: "AOT - Assumptions X-Ray",
-            handler: (context) => () => {
-                let uid = context.currentUid;
-                aot_ax(uid);
-                return "";
-            }
-        };
-        const args7 = {
-            text: "AOTCHOICE",
-            help: "AOT - Simple Choice",
-            handler: (context) => () => {
-                let uid = context.currentUid;
-                aot_choice(uid);
-                return "";
-            }
-        };
-        const args8 = {
-            text: "AOTADI",
-            help: "AOT - Agreement, Disagreement and Irrelevance",
-            handler: (context) => () => {
-                let uid = context.currentUid;
-                aot_adi(uid);
-                return "";
-            }
-        };
-        const args9 = {
-            text: "AOTAPC",
-            help: "AOT - Alternatives, Possibilities, Choices",
-            handler: (context) => () => {
-                let uid = context.currentUid;
-                aot_apc(uid);
-                return "";
-            }
-        };
-        const args10 = {
-            text: "AOTCAF",
-            help: "AOT - Consider All Factors",
-            handler: (context) => () => {
-                let uid = context.currentUid;
-                aot_caf(uid);
-                return "";
-            }
-        };
-        
-        if (window.roamjs?.extension?.smartblocks) {
-            window.roamjs.extension.smartblocks.registerCommand(args);
-            window.roamjs.extension.smartblocks.registerCommand(args1);
-            window.roamjs.extension.smartblocks.registerCommand(args2);
-            window.roamjs.extension.smartblocks.registerCommand(args3);
-            window.roamjs.extension.smartblocks.registerCommand(args4);
-            window.roamjs.extension.smartblocks.registerCommand(args5);
-            window.roamjs.extension.smartblocks.registerCommand(args6);
-            window.roamjs.extension.smartblocks.registerCommand(args7);
-            window.roamjs.extension.smartblocks.registerCommand(args8);
-            window.roamjs.extension.smartblocks.registerCommand(args9);
-            window.roamjs.extension.smartblocks.registerCommand(args10);
-        } else {
-            document.body.addEventListener(
-                `roamjs:smartblocks:loaded`,
-                () =>
-                    window.roamjs?.extension.smartblocks &&
-                    window.roamjs.extension.smartblocks.registerCommand(args) &&
-                    window.roamjs.extension.smartblocks.registerCommand(args1) &&
-                    window.roamjs.extension.smartblocks.registerCommand(args2) &&
-                    window.roamjs.extension.smartblocks.registerCommand(args3) &&
-                    window.roamjs.extension.smartblocks.registerCommand(args4) &&
-                    window.roamjs.extension.smartblocks.registerCommand(args5) &&
-                    window.roamjs.extension.smartblocks.registerCommand(args6) &&
-                    window.roamjs.extension.smartblocks.registerCommand(args7) &&
-                    window.roamjs.extension.smartblocks.registerCommand(args8) &&
-                    window.roamjs.extension.smartblocks.registerCommand(args9) &&
-                    window.roamjs.extension.smartblocks.registerCommand(args10)
-            );
+
+        if (!registerAllSmartblocks()) {
+            runtime.smartblocksLoadedHandler = () => registerAllSmartblocks();
+            document.body.addEventListener(`roamjs:smartblocks:loaded`, runtime.smartblocksLoadedHandler);
         }
     },
+
     onunload: () => {
         if (window.roamjs?.extension?.smartblocks) {
-            window.roamjs.extension.smartblocks.unregisterCommand("AOTADI");
-            window.roamjs.extension.smartblocks.unregisterCommand("AOTAPC");
-            window.roamjs.extension.smartblocks.unregisterCommand("AOTAX");
-            window.roamjs.extension.smartblocks.unregisterCommand("AOTBASICDECISION");
-            window.roamjs.extension.smartblocks.unregisterCommand("AOTCAF");
-            window.roamjs.extension.smartblocks.unregisterCommand("AOTCHOICE");
-            window.roamjs.extension.smartblocks.unregisterCommand("AOTDIFFERENCE");
-            window.roamjs.extension.smartblocks.unregisterCommand("AOTNEXTACTION");
-            /*window.roamjs.extension.smartblocks.unregisterCommand("AOTOPV");*/
-            window.roamjs.extension.smartblocks.unregisterCommand("AOTPMI");
-            window.roamjs.extension.smartblocks.unregisterCommand("AOTTOSCA");
-            window.roamjs.extension.smartblocks.unregisterCommand("AOTWANT");
-        };
-    }
+            // Unregister by SmartBlocks text id (stable)
+            const ids = [
+                "AOTADI",
+                "AOTAPC",
+                "AOTAX",
+                "AOTBASICDECISION",
+                "AOTCAF",
+                "AOTCHOICE",
+                "AOTDIFFERENCE",
+                "AOTFIP",
+                "AOTFIVEWHYS",
+                "AOTNEXTACTION",
+                "AOTPMI",
+                "AOTRAD",
+                "AOTREGRET",
+                "AOTRTD",
+                "AOTSIXHATS",
+                "AOTSWOT",
+                "AOTTOSCA",
+                "AOTWANT",
+                "AOTAGO",
+                "AOTCS",
+                "AOTDODCA",
+                "AOTEBS",
+            ];
+            ids.forEach((id) => window.roamjs.extension.smartblocks.unregisterCommand(id));
+        }
+
+        if (runtime.smartblocksLoadedHandler) {
+            document.body.removeEventListener(`roamjs:smartblocks:loaded`, runtime.smartblocksLoadedHandler);
+            runtime.smartblocksLoadedHandler = null;
+        }
+
+        runtime.focusedWindow = null;
+        runtime.running = false;
+        CURRENT_CTX = null;
+    },
+};
+
+// -------------------- AOT FLOWS --------------------
+
+// Aims, Goals, Objectives
+// https://www.debono.com/de-bono-thinking-lessons-1/4.-AGO-lesson-plan
+async function aot_ago(uid) {
+  throwIfCancelled();
+  forceCommitActiveEditor();
+
+  const topic = await mustPrompt("What is the topic / situation you’re setting objectives for?", 1, "AGO");
+
+  const header = "AGO::";
+  const ctx = getCtx();
+  await detachEditorFromBlockThenWrite(uid, ctx?.windowId || runtime.focusedWindow, async () => {
+    await trackedUpdateBlock(uid, header, true);
+  });
+
+  await trackedCreateBlock(uid, 0, `**Topic:** ${topic}`);
+
+  const aimBlock = window.roamAlphaAPI.util.generateUID();
+  await trackedCreateBlock(uid, 1, "**Aim (overall purpose):**", aimBlock);
+  const aim = await mustPrompt("What is the overall AIM (broad purpose)?", 1, "AGO");
+  await trackedCreateBlock(aimBlock, 0, String(aim));
+
+  const goalsBlock = window.roamAlphaAPI.util.generateUID();
+  await trackedCreateBlock(uid, 2, "**Goals (key results to achieve the aim):**", goalsBlock);
+
+  while (true) {
+    throwIfCancelled();
+    const goal = await mustPrompt("Name one GOAL (a key result).", 1, "AGO");
+    await trackedCreateBlock(goalsBlock, "last", String(goal));
+
+    const more = await mustPrompt("Any other goals?", 3, "AGO");
+    if (more !== "yes") break;
+  }
+
+  const objectivesBlock = window.roamAlphaAPI.util.generateUID();
+  await trackedCreateBlock(uid, 3, "**Objectives (specific, actionable steps):**", objectivesBlock);
+
+  while (true) {
+    throwIfCancelled();
+    const obj = await mustPrompt("Name one OBJECTIVE (specific, actionable step).", 1, "AGO");
+    await trackedCreateBlock(objectivesBlock, "last", String(obj));
+
+    const more = await mustPrompt("Any other objectives?", 3, "AGO");
+    if (more !== "yes") break;
+  }
+
+  await prompt(
+    "Quick review: does each objective clearly support a goal, and do the goals support the aim?",
+    4,
+    "AGO",
+    null,
+    6500
+  );
 }
-// Agreement, Disagreement and Irrelevance - COMPLETE
+
+// Agreement, Disagreement and Irrelevance
 async function aot_adi(uid) {
-    var header = "**Situation:**";
-    await window.roamAlphaAPI.updateBlock(
-        { block: { uid: uid, string: "" + header + "".toString(), open: true } });
+    throwIfCancelled();
+    forceCommitActiveEditor();
 
-    let situationString = "What is the situation you wish to analyse?";
-    let situation = await prompt(situationString, 1, "Agreement, Disagreement and Irrelevance");
-    var situationBlock1 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": uid, order: 0 },
-        block: { string: situation.toString(), uid: situationBlock1 }
-    });
+    const situation = await mustPrompt(
+        "What is the situation you wish to analyse?",
+        1,
+        "Agreement, Disagreement and Irrelevance"
+    );
 
-    var agreeBlock = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": uid, order: 1 },
-        block: { string: "**Agreement:**".toString(), uid: agreeBlock }
-    });
+    await setRootHeading(uid, "**Situation:**");
+    await appendLine(uid, situation, 0);
 
-    aot_adi_agree(uid, agreeBlock);
-}
-async function aot_adi_agree(uid, agreeBlock) {
-    let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${agreeBlock}"] ]`);
-    var order = 0;
-    if (existingItems[0][0].hasOwnProperty("children")) {
-        order = existingItems[0][0].children.length;
+    const agreeBlock = await ensureSection(uid, "**Agreement:**", { order: 1 });
+
+    while (true) {
+        throwIfCancelled();
+        const agree = await mustPrompt(
+            "What is something about this situation on which you agree?",
+            1,
+            "Agreement, Disagreement and Irrelevance"
+        );
+        await appendLine(agreeBlock, agree);
+
+        const more = await mustPrompt(
+            "Are there any other things on which you agree?",
+            3,
+            "Agreement, Disagreement and Irrelevance"
+        );
+        if (more !== "yes") break;
     }
 
-    let agree = await prompt("What is something about this situation on which you agree?", 1, "Agreement, Disagreement and Irrelevance");
-    var agreeBlock1 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": agreeBlock, order: order },
-        block: { string: agree.toString(), uid: agreeBlock1 }
-    });
+    const disagreeBlock = await ensureSection(uid, "**Disagreement:**", { order: 2 });
 
-    let more = await prompt("Are there any other things on which you agree?", 3, "Agreement, Disagreement and Irrelevance", null);
-    if (more == "yes") {
-        aot_adi_agree(uid, agreeBlock);
-    } else if (more == "no") {
-        var disagreeBlock = window.roamAlphaAPI.util.generateUID();
-        await window.roamAlphaAPI.createBlock({
-            location: { "parent-uid": uid, order: 2 },
-            block: { string: "**Disagreement:**".toString(), uid: disagreeBlock }
-        });
-        aot_adi_disagree(uid, disagreeBlock);
-    }
-}
-async function aot_adi_disagree(uid, disagreeBlock) {
-    let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${disagreeBlock}"] ]`);
-    var order = 0;
-    if (existingItems[0][0].hasOwnProperty("children")) {
-        order = existingItems[0][0].children.length;
+    while (true) {
+        throwIfCancelled();
+        const disagree = await mustPrompt(
+            "What is something about this situation on which you disagree?",
+            1,
+            "Agreement, Disagreement and Irrelevance"
+        );
+        await appendLine(disagreeBlock, disagree);
+
+        const more = await mustPrompt(
+            "Are there any other things on which you disagree?",
+            3,
+            "Agreement, Disagreement and Irrelevance"
+        );
+        if (more !== "yes") break;
     }
 
-    let disagree = await prompt("What is something about this situation on which you disagree?", 1, "Agreement, Disagreement and Irrelevance");
-    var disagreeBlock1 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": disagreeBlock, order: order },
-        block: { string: disagree.toString(), uid: disagreeBlock1 }
-    });
+    const irrBlock = await ensureSection(uid, "**Irrelevance:**", { order: 3 });
 
-    let more = await prompt("Are there any other things on which you disagree?", 3, "Agreement, Disagreement and Irrelevance", null);
-    if (more == "yes") {
-        aot_adi_disagree(uid, disagreeBlock);
-    } else if (more == "no") {
-        var irrBlock = window.roamAlphaAPI.util.generateUID();
-        await window.roamAlphaAPI.createBlock({
-            location: { "parent-uid": uid, order: 3 },
-            block: { string: "**Irrelevance:**".toString(), uid: irrBlock }
-        });
-        aot_adi_irr(uid, irrBlock);
-    }
-}
-async function aot_adi_irr(uid, irrBlock) {
-    let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${irrBlock}"] ]`);
-    var order = 0;
-    if (existingItems[0][0].hasOwnProperty("children")) {
-        order = existingItems[0][0].children.length;
-    }
+    while (true) {
+        throwIfCancelled();
+        const irrelevant = await mustPrompt(
+            "What is something about your disagreement that is irrelevant?",
+            1,
+            "Agreement, Disagreement and Irrelevance"
+        );
+        await appendLine(irrBlock, irrelevant);
 
-    let irrelevant = await prompt("What is something about your disagreement that is irrelevant?", 1, "Agreement, Disagreement and Irrelevance");
-    var irrelevant1 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": irrBlock, order: order },
-        block: { string: irrelevant.toString(), uid: irrelevant1 }
-    });
-
-    let more = await prompt("Are there any other things that have been brought up that are irrelevant?", 3, "Agreement, Disagreement and Irrelevance", null);
-    if (more == "yes") {
-        aot_adi_irr(uid, irrBlock);
+        const more = await mustPrompt(
+            "Are there any other things that have been brought up that are irrelevant?",
+            3,
+            "Agreement, Disagreement and Irrelevance"
+        );
+        if (more !== "yes") break;
     }
 }
 
-// Alternatives, Possibilities, Choices - COMPLETE
+// Alternatives, Possibilities, Choices
 async function aot_apc(uid) {
-    var header = "**Situation:**";
-    await window.roamAlphaAPI.updateBlock(
-        { block: { uid: uid, string: "" + header + "".toString(), open: true } });
+    throwIfCancelled();
+    forceCommitActiveEditor();
 
-    let situationString = "What is the situation you wish to consider?";
-    let situation = await prompt(situationString, 1, "Alternatives, Possibilities, Choices");
-    var situationBlock1 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": uid, order: 0 },
-        block: { string: situation.toString(), uid: situationBlock1 }
-    });
+    const situation = await mustPrompt(
+        "What is the situation you wish to consider?",
+        1,
+        "Alternatives, Possibilities, Choices"
+    );
 
-    var apcBlock = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": uid, order: 1 },
-        block: { string: "**Alternatives, Possibilities, Choices:**".toString(), uid: apcBlock }
-    });
+    await setRootHeading(uid, "**Situation:**");
+    await appendLine(uid, situation, 0);
 
-    aot_apc_apc(uid, apcBlock);
-}
-async function aot_apc_apc(uid, apcBlock) {
-    let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${apcBlock}"] ]`);
-    var order = 0;
-    if (existingItems[0][0].hasOwnProperty("children")) {
-        order = existingItems[0][0].children.length;
-    }
+    const apcBlock = await ensureSection(uid, "**Alternatives, Possibilities, Choices:**", { order: 1 });
 
-    let apc = await prompt("What is one way to consider this situation?", 1, "Alternatives, Possibilities, Choices")
-    var apcUID = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": apcBlock, order: order },
-        block: { string: apc.toString(), uid: apcUID }
-    });
+    while (true) {
+        throwIfCancelled();
+        const apc = await mustPrompt(
+            "What is one way to consider this situation?",
+            1,
+            "Alternatives, Possibilities, Choices"
+        );
+        await appendLine(apcBlock, apc);
 
-    let more = await prompt("Are there alternative ways to consider this?", 3, "Alternatives, Possibilities, Choices", null);
-    if (more == "yes") {
-        aot_apc_apc(uid, apcBlock);
+        const more = await mustPrompt("Are there alternative ways to consider this?", 3, "Alternatives, Possibilities, Choices");
+        if (more !== "yes") break;
     }
 }
 
-// Assumptions X-ray - COMPLETE
+// Assumptions X-ray
 async function aot_ax(uid) {
-    var header = "**Assumption X-Ray:**";
-    await window.roamAlphaAPI.updateBlock(
-        { block: { uid: uid, string: "" + header + "".toString(), open: true } });
+    throwIfCancelled();
 
-    var newuid = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": uid, order: 0 },
-        block: { string: "**General Assumptions:**", uid: newuid }
-    });
+    await setRootHeading(uid, "**Assumption X-Ray:**");
 
-    var newuid1 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": newuid, order: 0 },
-        block: { string: "Culturally Binding:", uid: newuid1 }
-    });
+    const generalUid = await ensureSection(uid, "**General Assumptions:**", { order: 0 });
 
-    let cultString = "What are the culturally binding assumptions?";
-    let cult = await prompt(cultString, 1, "Assumptions X-Ray");
-    var cultBlock = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": newuid1, order: 0 },
-        block: { string: cult.toString(), uid: cultBlock }
-    });
+    const culturallyUid = await ensureSection(generalUid, "Culturally Binding:", { order: 0 });
+    const cult = await mustPrompt("What are the culturally binding assumptions?", 1, "Assumptions X-Ray");
+    await appendLine(culturallyUid, cult, 0);
 
-    var newuid2 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": newuid, order: 1 },
-        block: { string: "Information Adequacy:", uid: newuid2 }
-    });
+    const infoUid = await ensureSection(generalUid, "Information Adequacy:", { order: 1 });
+    const info = await mustPrompt("Is the available information correct? Is it complete?", 1, "Assumptions X-Ray");
+    await appendLine(infoUid, info, 0);
 
-    let infoString = "Is the available information correct? Is it complete?";
-    let info = await prompt(infoString, 1, "Assumptions X-Ray");
-    var infoBlock = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": newuid2, order: 0 },
-        block: { string: info.toString(), uid: infoBlock }
-    });
+    const cruxUid = await ensureSection(uid, "**Assumptions at the crux:**", { order: 1 });
+    const crux = await mustPrompt("What is the main crux of your assumptions?", 1, "Assumptions X-Ray");
+    await appendLine(cruxUid, crux, 0);
 
-    var newuid3 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": uid, order: 1 },
-        block: { string: "**Assumptions at the crux:**", uid: newuid3 }
-    });
+    const constraintsUid = await ensureSection(uid, "**Assumptions determining the constraints:**", { order: 2 });
 
-    let cruxString = "What is the main crux of your assumptions?";
-    let crux = await prompt(cruxString, 1, "Assumptions X-Ray");
-    var cruxBlock = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": newuid3, order: 0 },
-        block: { string: crux.toString(), uid: cruxBlock }
-    });
+    const makeConstraint = async (label, q, order) => {
+        throwIfCancelled();
+        const parent = await ensureSection(constraintsUid, `${label}:`, { order });
+        const ans = await mustPrompt(q, 1, "Assumptions X-Ray");
+        // Put the answer as the first child each run (or append if you prefer)
+        await appendLine(parent, ans, "last");
+    };
 
-    var newuid4 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": uid, order: 2 },
-        block: { string: "**Assumptions determining the constraints:**", uid: newuid4 }
-    });
+    await makeConstraint("Time", "What assumptions are there around time?", 0);
+    await makeConstraint("Money", "What assumptions are there around money?", 1);
+    await makeConstraint("Energy", "What assumptions are there around the energy required?", 2);
+    await makeConstraint("Cost/Benefit", "Is solving this problem worthwhile? What is the cost/benefit?", 3);
+    await makeConstraint(
+        "Cooperation",
+        "Do I require the cooperation of anyone else? Do I hold assumptions about their views?",
+        4
+    );
+    await makeConstraint("Physics", "Do the laws of physics interfere? Is this problem insoluble?", 5);
+    await makeConstraint("Law", "Is the solution blocked by law?", 6);
 
-    var newuid5 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": newuid4, order: 0 },
-        block: { string: "Time:", uid: newuid5 }
-    });
-
-    let timeString = "What assumptions are there around time?";
-    let time = await prompt(timeString, 1, "Assumptions X-Ray");
-    var timeBlock = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": newuid5, order: 0 },
-        block: { string: time.toString(), uid: timeBlock }
-    });
-
-    var newuid6 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": newuid4, order: 1 },
-        block: { string: "Money:", uid: newuid6 }
-    });
-
-    let moneyString = "What assumptions are there around money?";
-    let money = await prompt(moneyString, 1, "Assumptions X-Ray");
-    var moneyBlock = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": newuid6, order: 0 },
-        block: { string: money.toString(), uid: moneyBlock }
-    });
-
-    var newuid7 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": newuid4, order: 2 },
-        block: { string: "Energy:", uid: newuid7 }
-    });
-
-    let energyString = "What assumptions are there around the energy required?";
-    let energy = await prompt(energyString, 1, "Assumptions X-Ray");
-    var energyBlock = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": newuid7, order: 0 },
-        block: { string: energy.toString(), uid: energyBlock }
-    });
-
-    var newuid8 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": newuid4, order: 3 },
-        block: { string: "Cost/Benefit:", uid: newuid8 }
-    });
-
-    let cbString = "Is solving this problem worthwhile? What is the cost/benefit?";
-    let cb = await prompt(cbString, 1, "Assumptions X-Ray");
-    var cbBlock = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": newuid8, order: 0 },
-        block: { string: cb.toString(), uid: cbBlock }
-    });
-
-    var newuid9 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": newuid4, order: 4 },
-        block: { string: "Cooperation:", uid: newuid9 }
-    });
-
-    let coopString = "Do I require the cooperation of anyone else? Do I hold assumptions about their views?";
-    let coop = await prompt(coopString, 1, "Assumptions X-Ray");
-    var coopBlock = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": newuid9, order: 0 },
-        block: { string: coop.toString(), uid: coopBlock }
-    });
-
-    var newuid10 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": newuid4, order: 5 },
-        block: { string: "Physics:", uid: newuid10 }
-    });
-
-    let physString = "Do the laws of physics interfere? Is this problem insoluble?";
-    let phys = await prompt(physString, 1, "Assumptions X-Ray");
-    var physBlock = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": newuid10, order: 0 },
-        block: { string: phys.toString(), uid: physBlock }
-    });
-
-    var newuid11 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": newuid4, order: 6 },
-        block: { string: "Law:", uid: newuid11 }
-    });
-
-    let lawString = "Is the solution blocked by law?";
-    let law = await prompt(lawString, 1, "Assumptions X-Ray");
-    var lawBlock = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": newuid11, order: 0 },
-        block: { string: law.toString(), uid: lawBlock }
-    });
-
-    await prompt("Finally, look over your assumptions and consider whether there are more to add, or other things to consider.", 4, "Assumptions X-Ray:", null, 6000);
+    await prompt(
+        "Finally, look over your assumptions and consider whether there are more to add, or other things to consider.",
+        4,
+        "Assumptions X-Ray:",
+        null,
+        6000
+    );
 }
 
-// Basic Decision functions - COMPLETE
+// Basic Decision
 async function aot_bd(uid) {
-    focusedWindow = await window.roamAlphaAPI.ui.getFocusedBlock()?.["window-id"];
+    throwIfCancelled();
+    const { windowId } = getFocus();
+    runtime.focusedWindow = windowId || runtime.focusedWindow;
+    forceCommitActiveEditor();
 
-    var header = "Basic Decision::";
-    await window.roamAlphaAPI.updateBlock(
-        { block: { uid: uid, string: "" + header + "".toString(), open: true } });
+    const choice = await mustPrompt("What are you trying to decide?", 1, "Basic Decision");
 
-    let choiceString = "What are you trying to decide?";
-    let choice = await prompt(choiceString, 1, "Basic Decision");
-    var choiceBlock = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": uid, order: 0 },
-        block: { string: "#Choice: " + choice + "".toString(), uid: choiceBlock }
-    });
+    await setRootHeading(uid, "Basic Decision::");
+    await appendLine(uid, `#Choice: ${choice}`, 0);
 
-    var optionsBlock = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": uid, order: 1 },
-        block: { string: "**Options:**".toString(), uid: optionsBlock }
-    });
+    const optionsBlock = await ensureSection(uid, "**Options:**", { order: 1 });
 
-    aot_bd_option(uid, optionsBlock, 1);
-}
-async function aot_bd_option(uid, optionsBlock, optionNumber) {
-    var optionString;
-    if (optionNumber == 1) {
-        optionString = "What is your first option?";
-    } else {
-        optionString = "What is another option?";
+    let optionNumber = 1;
+    while (true) {
+        throwIfCancelled();
+
+        const optionString = optionNumber === 1 ? "What is your first option?" : "What is another option?";
+        const option = await mustPrompt(optionString, 1, "Option");
+
+        const thisOption = await ensureSection(optionsBlock, `**${option}:**`, { order: optionNumber - 1 });
+
+        const adv = await mustPrompt("What is one advantage of this option?", 1, "Option");
+        const advBlock = await ensureSection(thisOption, "**Advantage:**", { order: 0 });
+        await appendLine(advBlock, adv, "last");
+
+        const dis = await mustPrompt("What is one disadvantage of this option?", 1, "Option");
+        const disBlock = await ensureSection(thisOption, "**Disadvantage:**", { order: 1 });
+        await appendLine(disBlock, dis, "last");
+
+        const finished = await mustPrompt("Are there any more options?", 3, "Basic Decision");
+        if (finished !== "yes") break;
+
+        optionNumber += 1;
     }
 
-    let option = await prompt(optionString, 1, "Option");
-    var thisOption = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": optionsBlock, order: (optionNumber - 1) },
-        block: { string: "**" + option + ":**".toString(), uid: thisOption }
-    });
+    const constraintsBlock = await ensureSection(uid, "**Constraints:**", { order: 2 });
 
-    let adv = await prompt("What is one advantage of this option?", 1, "Option");
-    var advBlock = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": thisOption, order: 0 },
-        block: { string: "**Advantage:**", uid: advBlock }
-    });
-    var advBlock1 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": advBlock, order: 0 },
-        block: { string: adv.toString(), uid: advBlock1 }
-    });
+    let constraintsNumber = 1;
+    while (true) {
+        throwIfCancelled();
+        const constraints = await mustPrompt("What is a constraint on this decision?", 1, "Constraint");
+        await appendLine(constraintsBlock, constraints, constraintsNumber - 1);
 
-    let dis = await prompt("What is one disadvantage of this option?", 1, "Option");
-    var disBlock = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": thisOption, order: 1 },
-        block: { string: "**Disadvantage:**", uid: disBlock }
-    });
-    var disBlock1 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": disBlock, order: 0 },
-        block: { string: dis.toString(), uid: disBlock1 }
-    });
+        const finished = await mustPrompt("Are there any more constraints?", 3, "Basic Decision");
+        if (finished !== "yes") break;
 
-    let finished = await prompt("Are there any more options?", 3, "Basic Decision")
-    if (finished == "yes") {
-        optionNumber = parseInt(optionNumber) + 1;
-        aot_bd_option(uid, optionsBlock, optionNumber);
-    } else if (finished == "no") {
-        var constraintsBlock = window.roamAlphaAPI.util.generateUID();
-        await window.roamAlphaAPI.createBlock({
-            location: { "parent-uid": uid, order: 2 },
-            block: { string: "**Constraints:**".toString(), uid: constraintsBlock }
-        });
-        aot_bd_constraints(uid, constraintsBlock, 1);
+        constraintsNumber += 1;
     }
+
+    await prompt(
+        "Look over your options and consider if there are more advantages or disadvantages to add. Then, consider your constraints. Finally, record your decision!",
+        4,
+        "Decision Time",
+        null,
+        8000
+    );
+
+    const decisionBlock = await ensureSection(uid, "**Decision:**", { order: 3 });
+    await leaf(decisionBlock, { order: 0, focus: true });
 }
-async function aot_bd_constraints(uid, constraintsBlock, contstraintsNumber) {
-    let constraints = await prompt("What is a constraint on this decision?", 1, "Constraint");
 
-    var consBlock1 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": constraintsBlock, order: (contstraintsNumber - 1) },
-        block: { string: constraints.toString(), uid: consBlock1 }
-    });
+// Consequence and Sequel
+// https://www.debono.com/de-bono-thinking-lessons-1/3.-C%26S-lesson-plan
+async function aot_cs(uid) {
+  throwIfCancelled();
+  forceCommitActiveEditor();
 
-    let finished = await prompt("Are there any more constraints?", 3, "Basic Decision")
-    if (finished == "yes") {
-        contstraintsNumber = parseInt(contstraintsNumber) + 1;
-        aot_bd_constraints(uid, constraintsBlock, contstraintsNumber);
-    } else if (finished == "no") {
-        aot_bd_finish(uid);
+  const action = await mustPrompt("What action/decision/idea are you evaluating consequences for?", 1, "C&S");
+
+  const header = "C&S::";
+  const ctx = getCtx();
+  await detachEditorFromBlockThenWrite(uid, ctx?.windowId || runtime.focusedWindow, async () => {
+    await trackedUpdateBlock(uid, header, true);
+  });
+
+  await trackedCreateBlock(uid, 0, `**Action / Decision:** ${action}`);
+
+  const makeHorizon = async (title, question, order) => {
+    throwIfCancelled();
+    const block = window.roamAlphaAPI.util.generateUID();
+    await trackedCreateBlock(uid, order, `**${title}:**`, block);
+
+    while (true) {
+      throwIfCancelled();
+      const c = await mustPrompt(question, 1, "C&S");
+      await trackedCreateBlock(block, "last", String(c));
+
+      const more = await mustPrompt("Any more?", 3, "C&S");
+      if (more !== "yes") break;
     }
-}
-async function aot_bd_finish(uid) {
-    await prompt("Look over your options and consider if there are more advantages or disadvantages to add. Then, consider your constraints. Finally, record your decision!", 4, "Decision Time", null, 8000);
-    var decisionBlock = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": uid, order: 3 },
-        block: { string: "**Decision:**".toString(), uid: decisionBlock }
-    });
-    var decisionBlock1 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": decisionBlock, order: 0 },
-        block: { string: "".toString(), uid: decisionBlock1 }
-    });
+  };
 
-    await window.roamAlphaAPI.ui.setBlockFocusAndSelection(
-        { location: { "block-uid": decisionBlock1, "window-id": focusedWindow } })
+  await makeHorizon("Immediate consequences", "Name one immediate consequence.", 1);
+  await makeHorizon("Short-term sequels", "Name one short-term sequel (what follows on).", 2);
+  await makeHorizon("Medium-term sequels", "Name one medium-term sequel.", 3);
+  await makeHorizon("Long-term sequels", "Name one long-term sequel.", 4);
+
+  await prompt(
+    "Scan your list: which sequels are most likely, and which are most important?",
+    4,
+    "C&S",
+    null,
+    6500
+  );
 }
 
-// Consequence and Sequel functions
-
-// Consider All Factors functions
+// Consider All Factors
 async function aot_caf(uid) {
-    var header = "**Situation:**";
-    await window.roamAlphaAPI.updateBlock(
-        { block: { uid: uid, string: "" + header + "".toString(), open: true } });
+    throwIfCancelled();
 
-    let situationString = "What is the situation you wish to consider?";
-    let situation = await prompt(situationString, 1, "Consider All Factors");
-    var situationBlock1 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": uid, order: 0 },
-        block: { string: situation.toString(), uid: situationBlock1 }
-    });
+    forceCommitActiveEditor();
+    const situation = await mustPrompt("What is the situation you wish to consider?", 1, "Consider All Factors");
 
-    var cafBlock = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": uid, order: 1 },
-        block: { string: "**Factors to Consider:**".toString(), uid: cafBlock }
-    });
+    await setRootHeading(uid, "**Situation:**");
+    await appendLine(uid, situation, 0);
 
-    aot_caf_factors(uid, cafBlock);
-}
-async function aot_caf_factors(uid, cafBlock) {
-    let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${cafBlock}"] ]`);
-    var order = 0;
-    if (existingItems[0][0].hasOwnProperty("children")) {
-        order = existingItems[0][0].children.length;
-    }
+    const cafBlock = await ensureSection(uid, "**Factors to Consider:**", { order: 1 });
 
-    let caf = await prompt("What is one factor you should consider?", 1, "Consider All Factors")
-    var cafUID = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": cafBlock, order: order },
-        block: { string: caf.toString(), uid: cafUID }
-    });
+    while (true) {
+        throwIfCancelled();
+        const caf = await mustPrompt("What is one factor you should consider?", 1, "Consider All Factors");
+        await appendLine(cafBlock, caf);
 
-    let more = await prompt("Are there other factors you need to consider?", 3, "Consider All Factors", null);
-    if (more == "yes") {
-        aot_caf_factors(uid, cafBlock);
+        const more = await mustPrompt("Are there other factors you need to consider?", 3, "Consider All Factors");
+        if (more !== "yes") break;
     }
 }
 
-// Difference Engine functions - COMPLETE
+// Design/Decision, Outcome, Channels, Action
+async function aot_dodca(uid) {
+  throwIfCancelled();
+  forceCommitActiveEditor();
+
+  const dd = await mustPrompt("What are you designing/deciding?", 1, "DODCA");
+
+  const header = "DODCA::";
+  const ctx = getCtx();
+  await detachEditorFromBlockThenWrite(uid, ctx?.windowId || runtime.focusedWindow, async () => {
+    await trackedUpdateBlock(uid, header, true);
+  });
+
+  await trackedCreateBlock(uid, 0, `**Design/Decision:** ${dd}`);
+
+  const outcomeBlock = window.roamAlphaAPI.util.generateUID();
+  await trackedCreateBlock(uid, 1, "**Outcomes (what success looks like):**", outcomeBlock);
+  while (true) {
+    throwIfCancelled();
+    const o = await mustPrompt("Name one desired outcome.", 1, "DODCA");
+    await trackedCreateBlock(outcomeBlock, "last", String(o));
+    const more = await mustPrompt("Any other outcomes?", 3, "DODCA");
+    if (more !== "yes") break;
+  }
+
+  const channelsBlock = window.roamAlphaAPI.util.generateUID();
+  await trackedCreateBlock(uid, 2, "**Channels (ways/means to reach outcomes):**", channelsBlock);
+  while (true) {
+    throwIfCancelled();
+    const c = await mustPrompt("Name one channel/approach/lever you could use.", 1, "DODCA");
+    await trackedCreateBlock(channelsBlock, "last", String(c));
+    const more = await mustPrompt("Any other channels?", 3, "DODCA");
+    if (more !== "yes") break;
+  }
+
+  const actionBlock = window.roamAlphaAPI.util.generateUID();
+  await trackedCreateBlock(uid, 3, "**Actions (next steps):**", actionBlock);
+  while (true) {
+    throwIfCancelled();
+    const a = await mustPrompt("Name one next action you can take.", 1, "DODCA");
+    await trackedCreateBlock(actionBlock, "last", `{{[[TODO]]}} ${a}`);
+    const more = await mustPrompt("Any other actions?", 3, "DODCA");
+    if (more !== "yes") break;
+  }
+}
+
+// Difference Engine
 async function aot_de(uid) {
-    var header = "Difference Engine::";
-    await window.roamAlphaAPI.updateBlock(
-        { block: { uid: uid, string: "" + header + "".toString(), open: true } });
+    throwIfCancelled();
 
-    var curUID = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": uid, order: 0 },
-        block: { string: "**Current Situation:**".toString(), uid: curUID }
-    });
+    await setRootHeading(uid, "Difference Engine::");
 
-    let current = await prompt("What is the Current Situation?", 1, "Difference Engine", null)
-    var curUID1 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": curUID, order: 0 },
-        block: { string: current.toString(), uid: curUID1 }
-    });
+    const curUID = await ensureSection(uid, "**Current Situation:**", { order: 0 });
+    const current = await mustPrompt("What is the Current Situation?", 1, "Difference Engine");
+    await appendLine(curUID, current, 0);
 
-    var futUID = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": uid, order: 1 },
-        block: { string: "**Future Situation:**".toString(), uid: futUID }
-    });
+    const futUID = await ensureSection(uid, "**Future Situation:**", { order: 1 });
+    const future = await mustPrompt("What is the situation in the Future?", 1, "Difference Engine");
+    await appendLine(futUID, future, 0);
 
-    let future = await prompt("What is the situation in the Future?", 1, "Difference Engine", null)
-    var futUID1 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": futUID, order: 0 },
-        block: { string: future.toString(), uid: futUID1 }
-    });
+    const difUID = await ensureSection(uid, "**Differences:**", { order: 2 });
 
-    var difUID = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": uid, order: 2 },
-        block: { string: "**Differences:**".toString(), uid: difUID }
-    });
+    while (true) {
+        throwIfCancelled();
+        const diff = await mustPrompt("What is one difference?", 1, "Difference Engine");
+        await appendLine(difUID, diff);
 
-    aot_de_dif(uid, difUID);
-}
-async function aot_de_dif(uid, difUID) {
-    let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${difUID}"] ]`);
-    var order = 0;
-    if (existingItems[0][0].hasOwnProperty("children")) {
-        order = existingItems[0][0].children.length;
+        const more = await mustPrompt("Are there any more differences?", 3, "Difference Engine");
+        if (more !== "yes") break;
     }
 
-    let diff = await prompt("What is one difference?", 1, "Difference Engine")
-    var diffUID1 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": difUID, order: order },
-        block: { string: diff.toString(), uid: diffUID1 }
-    });
+    const serUID = await ensureSection(uid, "**Most serious difference:**", { order: 3 });
 
-    let more = await prompt("Are there any more differences?", 3, "Difference Engine", null);
-    if (more == "yes") {
-        aot_de_dif(uid, difUID);
-    } else if (more == "no") {
-        aot_de_serious(uid, difUID);
+    // Choose from children of difUID
+    const serious = await chooseChild(difUID, "Difference Engine", "Which is the most serious difference?");
+    if (!serious) return;
+
+    await appendLine(serUID, `((${serious}))`, 0);
+
+    const mitUID = await ensureSection(uid, "**Steps to reduce the difference:**", { order: 4 });
+
+    while (true) {
+        throwIfCancelled();
+        const mitigate = await mustPrompt("What is one step to reduce the difference?", 1, "Difference Engine");
+        await appendLine(mitUID, mitigate);
+
+        const more = await mustPrompt("Are there any more ways to mitigate the difference?", 3, "Difference Engine");
+        if (more !== "yes") break;
     }
 }
-async function aot_de_serious(uid, difUID) {
-    let differences = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${difUID}"] ]`);
 
-    if (differences != undefined && differences[0][0].hasOwnProperty("children")) {
-        var serUID = window.roamAlphaAPI.util.generateUID();
-        await window.roamAlphaAPI.createBlock({
-            location: { "parent-uid": uid, order: 3 },
-            block: { string: "**Most serious difference:**", uid: serUID }
-        });
+// Examine Both Sides
+// https://www.zsolt.blog/2020/12/de-bonos-algorithms-of-thought-for_8.html
+async function aot_ebs(uid) {
+  throwIfCancelled();
+  forceCommitActiveEditor();
 
-        var selectString = "<select><option value=\"\">Select</option>";
-        for (var j = 0; j < differences[0][0].children.length; j++) {
-            selectString += "<option value=\"" + differences[0][0].children[j].uid + "\">" + differences[0][0].children[j].string + "</option>";
+  const issue = await mustPrompt("What issue / disagreement / choice do you want to examine both sides of?", 1, "EBS");
+
+  const header = "EBS::";
+  const ctx = getCtx();
+  await detachEditorFromBlockThenWrite(uid, ctx?.windowId || runtime.focusedWindow, async () => {
+    await trackedUpdateBlock(uid, header, true);
+  });
+
+  await trackedCreateBlock(uid, 0, `**Issue:** ${issue}`);
+
+  const sideABlock = window.roamAlphaAPI.util.generateUID();
+  await trackedCreateBlock(uid, 1, "**Side A (your current view):**", sideABlock);
+  while (true) {
+    throwIfCancelled();
+    const p = await mustPrompt("Add one point for Side A.", 1, "EBS");
+    await trackedCreateBlock(sideABlock, "last", String(p));
+    const more = await mustPrompt("More points for Side A?", 3, "EBS");
+    if (more !== "yes") break;
+  }
+
+  const sideBBlock = window.roamAlphaAPI.util.generateUID();
+  await trackedCreateBlock(uid, 2, "**Side B (the other view, mapped neutrally):**", sideBBlock);
+  while (true) {
+    throwIfCancelled();
+    const p = await mustPrompt("Add one point for Side B (as fairly as you can).", 1, "EBS");
+    await trackedCreateBlock(sideBBlock, "last", String(p));
+    const more = await mustPrompt("More points for Side B?", 3, "EBS");
+    if (more !== "yes") break;
+  }
+
+  const bridgeBlock = window.roamAlphaAPI.util.generateUID();
+  await trackedCreateBlock(uid, 3, "**Bridge / synthesis / next step:**", bridgeBlock);
+  const next = await mustPrompt("Given both sides, what’s a constructive next step?", 1, "EBS");
+  await trackedCreateBlock(bridgeBlock, 0, `{{[[TODO]]}} ${next}`);
+}
+
+// First Important Priorities (FIP)
+async function aot_fip(uid) {
+    throwIfCancelled();
+    forceCommitActiveEditor();
+
+    const ctx = getCtx();
+    await setRootHeading(uid, "First Important Priorities::", true);
+
+    // --- Situation ---
+    const situation = await mustPrompt(
+        "What situation are you dealing with (in one sentence)?",
+        1,
+        "First Important Priorities"
+    );
+
+    const situationSection = await ensureSection(uid, "**Situation:**");
+    await appendLine(situationSection, String(situation));
+
+    // --- Priorities container ---
+    const prioritiesSection = await ensureSection(uid, "**Priorities:**");
+
+    // Helper: create one priority subtree
+    const addPriority = async (n) => {
+        throwIfCancelled();
+
+        const p = await mustPrompt(
+            n === 1 ? "What is the single most important priority right now?" : "What is another important priority?",
+            1,
+            "First Important Priorities"
+        );
+
+        // Priority node
+        const priorityNode = await appendLine(prioritiesSection, `**Priority ${n}:** ${String(p)}`);
+        // If appendLine doesn’t return a uid in your helper implementation, replace the line above with:
+        // const priorityNode = await trackedCreateBlock(prioritiesSection, "last", `**Priority ${n}:** ${String(p)}`);
+
+        // Why important
+        const whySection = await trackedCreateBlock(priorityNode, "last", "**Why it matters:**");
+        const why = await mustPrompt("Why is this priority important?", 1, "First Important Priorities");
+        await appendLine(whySection, String(why));
+
+        // Consequence of not doing it
+        const riskSection = await trackedCreateBlock(priorityNode, "last", "**If I ignore this:**");
+        const risk = await mustPrompt("What happens if you *don’t* address this priority?", 1, "First Important Priorities");
+        await appendLine(riskSection, String(risk));
+
+        // First action
+        const actionSection = await trackedCreateBlock(priorityNode, "last", "**First action:**");
+        const action = await mustPrompt(
+            "What is the very first concrete action you can take?",
+            1,
+            "First Important Priorities"
+        );
+
+        const actionLeaf = await leaf(actionSection, { focus: false });
+        await trackedUpdateBlock(actionLeaf, `{{[[TODO]]}} ${String(action)}`, true);
+
+        return { priorityNode, actionLeaf };
+    };
+
+    // Default to at least 1 priority
+    let n = 1;
+    let firstActionLeaf = null;
+
+    while (true) {
+        const { actionLeaf } = await addPriority(n);
+        if (!firstActionLeaf) firstActionLeaf = actionLeaf;
+
+        const more = await mustPrompt("Do you have another priority to add?", 3, "First Important Priorities");
+        if (more !== "yes") break;
+
+        n += 1;
+
+        // Gentle guardrail (optional): prevent runaway trees
+        if (n > 7) {
+            await prompt(
+                "You’ve added quite a few priorities. Consider stopping and ranking them before adding more.",
+                4,
+                "First Important Priorities",
+                null,
+                6000
+            );
+            break;
+        }
+    }
+
+    // --- Rank / choose the “first first” ---
+    const closing = await ensureSection(uid, "**Choose what to do first:**");
+    await appendLine(
+        closing,
+        "Review the list above. Which priority should you do *first*? You can reorder or add notes."
+    );
+
+    // Put cursor somewhere useful
+    const focusLeaf = await leaf(closing, { focus: true });
+    await trackedUpdateBlock(focusLeaf, "", true);
+    await safeSetFocus(focusLeaf);
+
+    // Optional: also focus the first action TODO (uncomment if you prefer)
+    // if (firstActionLeaf) await safeSetFocus(firstActionLeaf);
+}
+
+// Five Whys
+async function aot_five_whys(uid) {
+    throwIfCancelled();
+    forceCommitActiveEditor();
+
+    await setRootHeading(uid, "Five Whys::", true);
+
+    // Problem / situation
+    const problem = await mustPrompt("What problem are you trying to understand?", 1, "Five Whys");
+    const problemSection = await ensureSection(uid, "**Problem:**");
+    await appendLine(problemSection, String(problem));
+
+    // Chain container
+    const chainSection = await ensureSection(uid, "**Why chain:**");
+
+    // Start the nested chain under the section
+    let parent = chainSection;
+
+    for (let i = 1; i <= 5; i++) {
+        throwIfCancelled();
+
+        // Create a "Why #n" node, then an answer leaf beneath it.
+        const whyNode = await trackedCreateBlock(parent, "last", `**Why ${i}?**`);
+        if (!whyNode) break;
+
+        const answer = await mustPrompt(
+            i === 1
+                ? "Why is this happening? (Answer as directly as you can.)"
+                : "And why is that true?",
+            1,
+            "Five Whys"
+        );
+
+        // Put the answer as a child of the Why node (leaf pattern).
+        const answerLeafUid = await leaf(whyNode, { focus: false });
+        await trackedUpdateBlock(answerLeafUid, String(answer), true);
+
+        // Early stop: ask if this is the root cause
+        const done = await mustPrompt("Is this the root cause (deep enough)?", 3, "Five Whys");
+        if (done === "yes") {
+            const resultSection = await ensureSection(uid, "**Root cause:**");
+            await appendLine(resultSection, `((${answerLeafUid}))`);
+            break;
         }
 
-        selectString += "</select>";
-        let serious = await prompt("Which is the most serious difference?", 2, "Difference Engine", selectString);
-        var serUID1 = window.roamAlphaAPI.util.generateUID();
-        await window.roamAlphaAPI.createBlock({
-            location: { "parent-uid": serUID, order: 0 },
-            block: { string: "((" + serious.toString() + "))", uid: serUID1 }
-        });
-
-        var mitUID = window.roamAlphaAPI.util.generateUID();
-        await window.roamAlphaAPI.createBlock({
-            location: { "parent-uid": uid, order: 4 },
-            block: { string: "**Steps to reduce the difference:**", uid: mitUID }
-        });
-
-        aot_de_mitigate(uid, mitUID);
-    }
-}
-async function aot_de_mitigate(uid, mitUID) {
-    let mitigating = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${mitUID}"] ]`);
-    var order = 0;
-    if (mitigating[0][0].hasOwnProperty("children")) {
-        order = mitigating[0][0].children.length;
+        // Next why nests under the previous answer (classic “why chain” feel)
+        parent = whyNode;
     }
 
-    let mitigate = await prompt("Which is the most serious difference?", 1, "Difference Engine", null);
-    var mitUID1 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": mitUID, order: order },
-        block: { string: mitigate.toString(), uid: mitUID1 }
-    });
-
-    let more = await prompt("Are there any more ways to mitigate the difference?", 3, "Difference Engine", null);
-    if (more == "yes") {
-        aot_de_mitigate(uid, mitUID)
-    } else if (more == "no") {
-        return;
-    }
+    // Optional: give them a place to write actions
+    const actionsSection = await ensureSection(uid, "**Next steps:**");
+    const actionLeaf = await leaf(actionsSection, { focus: true });
+    await trackedUpdateBlock(actionLeaf, "{{[[TODO]]}} ", true);
+    await safeSetFocus(actionLeaf);
 }
 
-// First Important Priorities
+// TODO: Issue Log
 
-// Issue Log functions
-
-// Next Action functions - COMPLETE
+// Next Action
 async function aot_na(uid) {
-    focusedWindow = await window.roamAlphaAPI.ui.getFocusedBlock()?.["window-id"];
+    throwIfCancelled();
 
-    var header = "Next Action::";
-    await window.roamAlphaAPI.updateBlock(
-        { block: { uid: uid, string: "" + header + "".toString(), open: true } });
+    const { windowId } = getFocus();
+    runtime.focusedWindow = windowId || runtime.focusedWindow;
 
-    let na = await prompt("Do you know the next action?", 3, "Next Action");
-    if (na == "yes") {
-        aot_na_yes(uid, 0);
-    } else if (na == "no") {
-        var brainstormingBlock = window.roamAlphaAPI.util.generateUID();
-        await window.roamAlphaAPI.createBlock({
-            location: { "parent-uid": uid, order: 0 },
-            block: { string: "**Brainstorming:**".toString(), uid: brainstormingBlock }
-        });
-        aot_na_no(uid, brainstormingBlock, 1);
-    }
-}
-async function aot_na_no(uid, brainstormingBlock, bsCount) {
-    let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${brainstormingBlock}"] ]`);
-    var order = 0;
+    forceCommitActiveEditor();
 
-    if (existingItems[0][0].hasOwnProperty("children")) {
-        order = existingItems[0][0].children.length;
-    }
-    var brainstormingBlock2 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": brainstormingBlock, order: order },
-        block: { string: "".toString(), uid: brainstormingBlock2 }
-    });
-    await window.roamAlphaAPI.ui.setBlockFocusAndSelection(
-        { location: { "block-uid": brainstormingBlock2, "window-id": focusedWindow } })
+    const na = await mustPrompt("Do you know the next action?", 3, "Next Action");
+    await setRootHeading(uid, "Next Action::");
 
-    await prompt("Do a three-minute brainstorming session to come up with a next action", 5, "Brainstorming", null, 180000);
-
-    let na = await prompt("Now do you know the next action?", 3, "Next Action")
-    if (na == "yes") {
-        aot_na_yes(uid, 1);
-    } else if (na == "no") {
-        aot_na_no(uid, brainstormingBlock, bsCount);
-    }
-}
-async function aot_na_yes(uid, order) {
-    let string = "What's the very next action?";
-    let na = await prompt(string, 1, "Next Action");
-    var naBlock = window.roamAlphaAPI.util.generateUID();
-    aot_na_sim(uid, 1, na, naBlock);
-}
-async function aot_na_sim(uid, order, na, naBlock) {
-    let string = "Now mentally simulate doing this action - " + na + ". Can you do it right now?";
-    let na_now = await prompt(string, 3, "Next Action");
-    if (na_now == "no") {
-        aot_na_blocking(uid, order, na, naBlock);
-    } else {
-        await window.roamAlphaAPI.createBlock({
-            location: { "parent-uid": uid, order: order },
-            block: { string: "{{[[TODO]]}} " + na.toString(), uid: naBlock }
-        });
-    }
-}
-async function aot_na_blocking(uid, order, na, naBlock) {
-    let string = "Create any other tasks you need to complete";
-    let nablocking = await prompt(string, 1, "Next Action");
-
-    var naBlock1 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": uid, order: order },
-        block: { string: "{{[[TODO]]}} " + nablocking.toString() + " #blocking [*](((" + naBlock + ")))", uid: naBlock1 }
-    });
-
-    let string1 = "Are there any other blocking tasks?";
-    let na_now1 = await prompt(string1, 3, "Next Action");
-    if (na_now1 == "yes") {
-        order = order + 1;
-        aot_na_blocking(uid, order, na, naBlock);
-    } else {
-        await window.roamAlphaAPI.createBlock({
-            location: { "parent-uid": uid, order: order + 1 },
-            block: { string: "{{[[TODO]]}} " + na.toString() + "", uid: naBlock }
-        });
-    }
-}
-
-// Other People's Views functions
-async function aot_opv(uid) {
-    let situation = await prompt("What is the situation?", 1, "Other People's Views");
-    let string = "**Situation:** " + situation.toString();
-
-    await sleep(20);
-    await window.roamAlphaAPI.updateBlock(
-        { block: { uid: uid, string: string, open: true } });
-
-    var peopleUID = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": uid, order: 0 },
-        block: { string: "{{table}}", uid: peopleUID }
-    });
-    aot_opv_people(uid, peopleUID);
-}
-async function aot_opv_people(uid, peopleUID) {
-    let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${peopleUID}"] ]`);
-    var order = 0;
-    if (existingItems[0][0].hasOwnProperty("children")) {
-        order = existingItems[0][0].children.length;
-    }
-
-    let person = await prompt("Who is affected by this?", 1, "Other People's Views");
-    var personUID = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": peopleUID, order: order },
-        block: { string: person.toString(), uid: personUID }
-    });
-
-    let more = await prompt("Are there other people affected?", 3, "Other People's Views");
-    if (more == "yes") {
-        aot_opv_people(uid, peopleUID);
-    } else if (more == "no") {
-        aot_opv_views(uid, peopleUID);
-    }
-}
-async function aot_opv_views(uid, peopleUID) {
-    let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${peopleUID}"] ]`);
-
-    if (existingItems != undefined && existingItems[0][0].hasOwnProperty("children")) {
-        for (var i = 0; i < existingItems[0][0].children.length; i++) {
-            await aot_opv_getViews(existingItems[0][0].children[i].string, existingItems[0][0].children[i].uid);
-
-            async function aot_opv_getViews(name, uid) {
-                let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${uid}"] ]`);
-                var order = 0;
-                if (existingItems[0][0].hasOwnProperty("children")) {
-                    order = existingItems[0][0].children.length;
-                }
-
-                let view = await prompt("How does " + name + " view this situation?", 1, "Other People's Views");
-                return (view);
-            }
-
-            var viewUID = window.roamAlphaAPI.util.generateUID();
-            await window.roamAlphaAPI.createBlock({
-                location: { "parent-uid": uid, order: order },
-                block: { string: view.toString(), uid: viewUID }
-            });
-
-            let more = await prompt("Do they have any other views?", 3, "Want, Impediment, Remedy");
-            if (more == "yes") {
-                aot_opv_getViews(name, uid);
-            }
-        }
-    }
-}
-
-// Pain Button functions
-
-// Plus, Minus and Interesting functions - COMPLETE
-async function aot_pmi(uid) {
-    let situation = await prompt("What situation are you facing/considering?", 1, "Plus, Minus and Interesting");
-    let string = "**Situation:** " + situation.toString();
-    await sleep(20);
-    await window.roamAlphaAPI.updateBlock(
-        { block: { uid: uid, string: string, open: true } });
-
-    var plusUID = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": uid, order: 0 },
-        block: { string: "**Plus:**".toString(), uid: plusUID }
-    });
-    aot_pmi_plus(uid, plusUID);
-}
-async function aot_pmi_plus(uid, plusUID) {
-    let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${plusUID}"] ]`);
-    var order = 0;
-    if (existingItems[0][0].hasOwnProperty("children")) {
-        order = existingItems[0][0].children.length;
-    }
-
-    let plus = await prompt("What is a positive aspect of this situation?", 1, "Plus, Minus and Interesting");
-    var plusUID1 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": plusUID, order: order },
-        block: { string: plus.toString(), uid: plusUID1 }
-    });
-
-    let more = await prompt("Are there any more positive aspects to consider?", 3, "Plus, Minus and Interesting");
-    if (more == "yes") {
-        aot_pmi_plus(uid, plusUID);
-    } else if (more == "no") {
-        var minusUID = window.roamAlphaAPI.util.generateUID();
-        await window.roamAlphaAPI.createBlock({
-            location: { "parent-uid": uid, order: 1 },
-            block: { string: "**Minus:**".toString(), uid: minusUID }
-        });
-        aot_pmi_minus(uid, minusUID);
-    }
-}
-async function aot_pmi_minus(uid, minusUID) {
-    let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${minusUID}"] ]`);
-    var order = 0;
-    if (existingItems[0][0].hasOwnProperty("children")) {
-        order = existingItems[0][0].children.length;
-    }
-
-    let minus = await prompt("What is a negative aspect of this situation?", 1, "Plus, Minus and Interesting");
-    var minusUID1 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": minusUID, order: order },
-        block: { string: minus.toString(), uid: minusUID1 }
-    });
-
-    let more = await prompt("Are there any more negative aspects to consider?", 3, "Plus, Minus and Interesting");
-    if (more == "yes") {
-        aot_pmi_minus(uid, minusUID);
-    } else if (more == "no") {
-        var intUID = window.roamAlphaAPI.util.generateUID();
-        await window.roamAlphaAPI.createBlock({
-            location: { "parent-uid": uid, order: 2 },
-            block: { string: "**Interesting:**".toString(), uid: intUID }
-        });
-        aot_pmi_int(uid, intUID);
-    }
-}
-async function aot_pmi_int(uid, intUID) {
-    let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${intUID}"] ]`);
-    var order = 0;
-    if (existingItems[0][0].hasOwnProperty("children")) {
-        order = existingItems[0][0].children.length;
-    }
-
-    let int = await prompt("What is an interesting aspect of this situation?", 1, "Plus, Minus and Interesting");
-    var intUID1 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": intUID, order: order },
-        block: { string: int.toString(), uid: intUID1 }
-    });
-
-    let more = await prompt("Are there any more interesting aspects to consider?", 3, "Plus, Minus and Interesting");
-    if (more == "yes") {
-        aot_pmi_int(uid, intUID);
-    } else if (more == "no") {
+    if (na === "yes") {
+        const next = await mustPrompt("What's the very next action?", 1, "Next Action");
+        await aot_na_sim(uid, 1, next);
         return;
     }
+
+    const brainstormingBlock = await ensureSection(uid, "**Brainstorming:**", { order: 0 });
+
+    while (true) {
+        throwIfCancelled();
+
+        const scratch = await leaf(brainstormingBlock, { order: "last", focus: true });
+
+        await prompt(
+            "Do a three-minute brainstorming session to come up with a next action",
+            5,
+            "Brainstorming",
+            null,
+            180000
+        );
+
+        const now = await mustPrompt("Now do you know the next action?", 3, "Next Action");
+        if (now === "yes") {
+            const next = await mustPrompt("What's the very next action?", 1, "Next Action");
+            await aot_na_sim(uid, 1, next);
+            return;
+        }
+
+        // keep the scratch leaf (it's the brainstorm output)
+        // (scratch var kept for clarity; not used)
+        void scratch;
+    }
 }
 
-// REALLY? functions
+async function aot_na_sim(uid, order, na) {
+    throwIfCancelled();
 
-// REAPPRAISED functions
+    const na_now = await mustPrompt(`Now mentally simulate doing this action - ${na}. Can you do it right now?`, 3, "Next Action");
+    const naBlock = window.roamAlphaAPI.util.generateUID();
 
-// Regret Minimisation functions
+    if (na_now === "yes") {
+        await trackedCreateBlock(uid, order, `{{[[TODO]]}} ${na}`, naBlock);
+        return;
+    }
 
-// Right to Disagree functions
+    let curOrder = order;
+    while (true) {
+        throwIfCancelled();
+        const nablocking = await mustPrompt("Create any other tasks you need to complete", 1, "Next Action");
 
-// Simple Choice functions - COMPLETE
+        const naBlock1 = window.roamAlphaAPI.util.generateUID();
+        await trackedCreateBlock(uid, curOrder, `{{[[TODO]]}} ${nablocking} #blocking [*](((${naBlock})))`, naBlock1);
+
+        const more = await mustPrompt("Are there any other blocking tasks?", 3, "Next Action");
+        if (more !== "yes") break;
+
+        curOrder += 1;
+    }
+
+    await trackedCreateBlock(uid, curOrder + 1, `{{[[TODO]]}} ${na}`, naBlock);
+}
+
+// Plus, Minus and Interesting
+async function aot_pmi(uid) {
+    throwIfCancelled();
+
+    const situation = await mustPrompt("What situation are you facing/considering?", 1, "Plus, Minus and Interesting");
+    await setRootHeading(uid, `**Situation:** ${situation}`);
+
+    const plusUID = await ensureSection(uid, "**Plus:**", { order: 0 });
+    while (true) {
+        throwIfCancelled();
+        const plus = await mustPrompt("What is a positive aspect of this situation?", 1, "Plus, Minus and Interesting");
+        await appendLine(plusUID, plus);
+
+        const more = await mustPrompt("Are there any more positive aspects to consider?", 3, "Plus, Minus and Interesting");
+        if (more !== "yes") break;
+    }
+
+    const minusUID = await ensureSection(uid, "**Minus:**", { order: 1 });
+    while (true) {
+        throwIfCancelled();
+        const minus = await mustPrompt("What is a negative aspect of this situation?", 1, "Plus, Minus and Interesting");
+        await appendLine(minusUID, minus);
+
+        const more = await mustPrompt("Are there any more negative aspects to consider?", 3, "Plus, Minus and Interesting");
+        if (more !== "yes") break;
+    }
+
+    const intUID = await ensureSection(uid, "**Interesting:**", { order: 2 });
+    while (true) {
+        throwIfCancelled();
+        const int = await mustPrompt("What is an interesting aspect of this situation?", 1, "Plus, Minus and Interesting");
+        await appendLine(intUID, int);
+
+        const more = await mustPrompt("Are there any more interesting aspects to consider?", 3, "Plus, Minus and Interesting");
+        if (more !== "yes") break;
+    }
+}
+
+// Recognise, Analyse, Divide
+async function aot_rad(uid) {
+    throwIfCancelled();
+    forceCommitActiveEditor();
+    await setRootHeading(uid, "Recognise, Analyse, Divide::", true);
+
+    const issue = await mustPrompt("What issue/problem are you working on (one sentence)?", 1, "Recognise, Analyse, Divide");
+    const issueSec = await ensureSection(uid, "**Issue:**");
+    await appendLine(issueSec, String(issue));
+
+    const recogniseSec = await ensureSection(uid, "**Recognise (what’s here?):**");
+    await appendLine(recogniseSec, "List key elements without solving yet (facts, stakeholders, constraints, unknowns).");
+
+    while (true) {
+        throwIfCancelled();
+        const item = await mustPrompt("Name one key element (fact/stakeholder/constraint/unknown).", 1, "Recognise");
+        await appendLine(recogniseSec, String(item));
+        const more = await mustPrompt("Add another element?", 3, "Recognise");
+        if (more !== "yes") break;
+    }
+
+    const analyseSec = await ensureSection(uid, "**Analyse (what’s going on?):**");
+    const a1 = await mustPrompt("What do you think is driving this issue? (causes/mechanisms)", 1, "Analyse");
+    await appendLine(analyseSec, `**Drivers:** ${a1}`);
+    const a2 = await mustPrompt("What assumptions are you making (yours/theirs/systemic)?", 1, "Analyse");
+    await appendLine(analyseSec, `**Assumptions:** ${a2}`);
+    const a3 = await mustPrompt("What’s missing or uncertain? What would you need to learn?", 1, "Analyse");
+    await appendLine(analyseSec, `**Unknowns:** ${a3}`);
+
+    const divideSec = await ensureSection(uid, "**Divide (split into parts):**");
+    await appendLine(divideSec, "Break the issue into smaller sub-problems you can address independently.");
+
+    let n = 1;
+    while (true) {
+        throwIfCancelled();
+
+        const sub = await mustPrompt(
+            n === 1 ? "What is the first sub-problem?" : "What is another sub-problem?",
+            1,
+            "Divide"
+        );
+
+        // Create a node so we can attach children
+        const subNode = await trackedCreateBlock(divideSec, "last", `**Sub-problem ${n}:** ${String(sub)}`);
+        const clarify = await mustPrompt("Describe it clearly (what counts as solved?).", 1, "Divide");
+        await trackedCreateBlock(subNode, "last", `**Definition:** ${String(clarify)}`);
+
+        const next = await mustPrompt("What is the first actionable next step?", 1, "Divide");
+        const nextSec = await trackedCreateBlock(subNode, "last", "**Next step:**");
+        const todoLeaf = await leaf(nextSec, { focus: false });
+        await trackedUpdateBlock(todoLeaf, `{{[[TODO]]}} ${String(next)}`, true);
+
+        const more = await mustPrompt("Add another sub-problem?", 3, "Divide");
+        if (more !== "yes") break;
+        n += 1;
+
+        if (n > 10) {
+            await prompt("You’ve added many sub-problems. Consider stopping and ranking them.", 4, "Recognise, Analyse, Divide", null, 6000);
+            break;
+        }
+    }
+
+    const focusSec = await ensureSection(uid, "**Now choose one:**");
+    const focusLeaf = await leaf(focusSec, { focus: true });
+    await trackedUpdateBlock(focusLeaf, "Which sub-problem will you tackle first, and why?", true);
+    await safeSetFocus(focusLeaf);
+}
+
+// Regret Minimisation
+async function aot_regret_min(uid) {
+    throwIfCancelled();
+    forceCommitActiveEditor();
+
+    await setRootHeading(uid, "Regret Minimisation::", true);
+
+    const decision = await mustPrompt("What decision are you considering?", 1, "Regret Minimisation");
+    const dSec = await ensureSection(uid, "**Decision:**");
+    await appendLine(dSec, String(decision));
+
+    const horizon = await mustPrompt("Choose a time horizon (e.g., 1 year / 5 years / 10 years).", 1, "Regret Minimisation");
+    const hSec = await ensureSection(uid, "**Time horizon:**");
+    await appendLine(hSec, String(horizon));
+
+    const self = await mustPrompt(`Imagine yourself ${horizon} from now. What do you value most about that future life?`, 1, "Regret Minimisation");
+    const vSec = await ensureSection(uid, "**Future-self values:**");
+    await appendLine(vSec, String(self));
+
+    const doSec = await ensureSection(uid, "**If you DO it, you might regret:**");
+    while (true) {
+        throwIfCancelled();
+        const r = await mustPrompt("Name one possible regret if you do it.", 1, "Regret Minimisation");
+        await appendLine(doSec, String(r));
+        const more = await mustPrompt("Add another regret (DO)?", 3, "Regret Minimisation");
+        if (more !== "yes") break;
+    }
+
+    const dontSec = await ensureSection(uid, "**If you DON’T do it, you might regret:**");
+    while (true) {
+        throwIfCancelled();
+        const r = await mustPrompt("Name one possible regret if you don’t do it.", 1, "Regret Minimisation");
+        await appendLine(dontSec, String(r));
+        const more = await mustPrompt("Add another regret (DON’T)?", 3, "Regret Minimisation");
+        if (more !== "yes") break;
+    }
+
+    const mitigateSec = await ensureSection(uid, "**How to reduce regrets:**");
+    const m1 = await mustPrompt("What could you do now to reduce the biggest DO-regret?", 1, "Regret Minimisation");
+    await appendLine(mitigateSec, `**Reduce DO-regret:** ${m1}`);
+    const m2 = await mustPrompt("What could you do now to reduce the biggest DON’T-regret?", 1, "Regret Minimisation");
+    await appendLine(mitigateSec, `**Reduce DON’T-regret:** ${m2}`);
+
+    const choiceSec = await ensureSection(uid, "**Decision draft:**");
+    const choice = await mustPrompt("Given this, what do you choose (for now)?", 1, "Regret Minimisation");
+    await appendLine(choiceSec, String(choice));
+
+    const nextSec = await ensureSection(uid, "**Next action:**");
+    const next = await mustPrompt("What is the next small action to move forward (or test)?", 1, "Regret Minimisation");
+    const todoLeaf = await leaf(nextSec, { focus: true });
+    await trackedUpdateBlock(todoLeaf, `{{[[TODO]]}} ${String(next)}`, true);
+    await safeSetFocus(todoLeaf);
+}
+
+// Right to Disagree
+async function aot_right_to_disagree(uid) {
+    throwIfCancelled();
+    forceCommitActiveEditor();
+    await setRootHeading(uid, "Right to Disagree::", true);
+
+    const context = await mustPrompt("What disagreement are you in (briefly describe the context)?", 1, "Right to Disagree");
+    const cSec = await ensureSection(uid, "**Context:**");
+    await appendLine(cSec, String(context));
+
+    const other = await mustPrompt("State their position as fairly as possible (steelman it).", 1, "Right to Disagree");
+    const oSec = await ensureSection(uid, "**Their position (steelman):**");
+    await appendLine(oSec, String(other));
+
+    const yours = await mustPrompt("State your position clearly (one paragraph).", 1, "Right to Disagree");
+    const ySec = await ensureSection(uid, "**Your position:**");
+    await appendLine(ySec, String(yours));
+
+    const agree = await mustPrompt("What do you agree with (even partially)?", 1, "Right to Disagree");
+    const aSec = await ensureSection(uid, "**Points of agreement:**");
+    await appendLine(aSec, String(agree));
+
+    const values = await mustPrompt("What values or goals are driving your view?", 1, "Right to Disagree");
+    const vSec = await ensureSection(uid, "**Underlying values/goals:**");
+    await appendLine(vSec, String(values));
+
+    const evidenceSec = await ensureSection(uid, "**Evidence / reasons:**");
+    while (true) {
+        throwIfCancelled();
+        const r = await mustPrompt("Add one reason/evidence point for your view.", 1, "Right to Disagree");
+        await appendLine(evidenceSec, String(r));
+        const more = await mustPrompt("Add another reason?", 3, "Right to Disagree");
+        if (more !== "yes") break;
+    }
+
+    const bridge = await mustPrompt("What would a reasonable compromise or ‘both can be true’ framing look like?", 1, "Right to Disagree");
+    const bSec = await ensureSection(uid, "**Bridge / compromise:**");
+    await appendLine(bSec, String(bridge));
+
+    const ask = await mustPrompt("What do you want to ask for (a decision, a trial, data, a pause, etc.)?", 1, "Right to Disagree");
+    const askSec = await ensureSection(uid, "**Request / next step:**");
+    await appendLine(askSec, String(ask));
+
+    const draftSec = await ensureSection(uid, "**Draft message (calm + respectful):**");
+    const draftLeaf = await leaf(draftSec, { focus: true });
+    await trackedUpdateBlock(
+        draftLeaf,
+        `Thanks for sharing your view. I think you’re right about ${agree}. Where I see it differently is: ${yours}\n\nWhat I’m aiming for is: ${values}. Could we try: ${bridge}\n\nMy request: ${ask}`,
+        true
+    );
+    await safeSetFocus(draftLeaf);
+}
+
+// Six Thinking Hats
+async function aot_six_hats(uid) {
+    throwIfCancelled();
+    forceCommitActiveEditor();
+    await setRootHeading(uid, "Six Thinking Hats::", true);
+
+    const topic = await mustPrompt("What topic/decision/problem are you thinking about?", 1, "Six Thinking Hats");
+    const tSec = await ensureSection(uid, "**Topic:**");
+    await appendLine(tSec, String(topic));
+
+    const hats = [
+        { name: "White Hat", prompt: "List facts, data, and what you *know*. What information is missing?" },
+        { name: "Red Hat", prompt: "What are your feelings/intuition here (no justification needed)?" },
+        { name: "Black Hat", prompt: "What could go wrong? Risks, downsides, cautions." },
+        { name: "Yellow Hat", prompt: "What are the benefits? Upside, value, opportunities." },
+        { name: "Green Hat", prompt: "Generate alternatives/creative options. What else could you do?" },
+        { name: "Blue Hat", prompt: "What is the process/next steps? Summarise and decide how you’ll proceed." },
+    ];
+
+    for (const h of hats) {
+        throwIfCancelled();
+
+        const sec = await ensureSection(uid, `**${h.name}:**`);
+
+        // Let user add multiple bullets per hat
+        while (true) {
+            throwIfCancelled();
+            const line = await mustPrompt(h.prompt, 1, h.name);
+            await appendLine(sec, String(line));
+
+            const more = await mustPrompt(`Add another note for ${h.name}?`, 3, "Six Thinking Hats");
+            if (more !== "yes") break;
+        }
+    }
+
+    const synth = await ensureSection(uid, "**Synthesis:**");
+    const synthLeaf = await leaf(synth, { focus: true });
+    await trackedUpdateBlock(synthLeaf, "What is your current best conclusion? What will you do next?", true);
+    await safeSetFocus(synthLeaf);
+}
+
+// SWOT Analysis — COMPLETE
+async function aot_swot(uid) {
+    throwIfCancelled();
+    forceCommitActiveEditor();
+    await setRootHeading(uid, "SWOT Analysis::", true);
+
+    const subject = await mustPrompt("What are you doing a SWOT for (project, decision, career move, strategy)?", 1, "SWOT Analysis");
+    const sSec = await ensureSection(uid, "**Subject:**");
+    await appendLine(sSec, String(subject));
+
+    const sections = [
+        { title: "**Strengths:**", q: "Add one strength (internal advantage).", name: "Strengths" },
+        { title: "**Weaknesses:**", q: "Add one weakness (internal limitation).", name: "Weaknesses" },
+        { title: "**Opportunities:**", q: "Add one opportunity (external upside).", name: "Opportunities" },
+        { title: "**Threats:**", q: "Add one threat (external risk).", name: "Threats" },
+    ];
+
+    const uids = {};
+
+    for (const s of sections) {
+        throwIfCancelled();
+        const secUid = await ensureSection(uid, s.title);
+        uids[s.name] = secUid;
+
+        while (true) {
+            throwIfCancelled();
+            const item = await mustPrompt(s.q, 1, "SWOT Analysis");
+            await appendLine(secUid, String(item));
+
+            const more = await mustPrompt(`Add another ${s.name.toLowerCase().slice(0, -1)}?`, 3, "SWOT Analysis");
+            if (more !== "yes") break;
+        }
+    }
+
+    const strat = await ensureSection(uid, "**Strategies:**");
+    await appendLine(strat, "**SO:** Use strengths to seize opportunities.");
+    await appendLine(strat, "**ST:** Use strengths to reduce threats.");
+    await appendLine(strat, "**WO:** Use opportunities to improve weaknesses.");
+    await appendLine(strat, "**WT:** Reduce weaknesses to avoid threats.");
+
+    const so = await mustPrompt("Name one SO strategy (Strength → Opportunity).", 1, "SWOT Strategies");
+    await appendLine(strat, `**SO:** ${so}`);
+    const st = await mustPrompt("Name one ST strategy (Strength → Threat).", 1, "SWOT Strategies");
+    await appendLine(strat, `**ST:** ${st}`);
+    const wo = await mustPrompt("Name one WO strategy (Weakness → Opportunity).", 1, "SWOT Strategies");
+    await appendLine(strat, `**WO:** ${wo}`);
+    const wt = await mustPrompt("Name one WT strategy (Weakness → Threat).", 1, "SWOT Strategies");
+    await appendLine(strat, `**WT:** ${wt}`);
+
+    const priorities = await ensureSection(uid, "**Top priorities:**");
+    for (let i = 1; i <= 3; i++) {
+        throwIfCancelled();
+        const p = await mustPrompt(`Priority ${i}: What will you do? (actionable)`, 1, "SWOT Analysis");
+        const todoLeaf = await leaf(priorities, { focus: i === 1 });
+        await trackedUpdateBlock(todoLeaf, `{{[[TODO]]}} ${String(p)}`, true);
+        if (i === 1) await safeSetFocus(todoLeaf);
+    }
+}
+
+// Simple Choice
 async function aot_choice(uid) {
-    focusedWindow = await window.roamAlphaAPI.ui.getFocusedBlock()?.["window-id"];
-    var header = "**{{[[TODO]]}} [[Choice]]:**";
-    let choice = await prompt("What do you need to decide about?", 1, "Simple Choice");
-    await sleep(50);
-    await window.roamAlphaAPI.updateBlock(
-        { block: { uid: uid, string: "" + header + " " + choice.toString(), open: true } });
-    await sleep(50);
-    var newuid = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": uid, order: 0 },
-        block: { string: "**Constraints:**", uid: newuid }
-    });
-    aot_choice_constraints(uid, newuid, focusedWindow);
-}
-async function aot_choice_constraints(uid, newuid, focusedWindow) {
-    let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${newuid}"] ]`);
-    var order = 0;
-    if (existingItems[0][0].hasOwnProperty("children")) {
-        order = existingItems[0][0].children.length;
+    throwIfCancelled();
+
+    const { windowId } = getFocus();
+    runtime.focusedWindow = windowId || runtime.focusedWindow;
+    forceCommitActiveEditor();
+
+    const choice = await mustPrompt("What do you need to decide about?", 1, "Simple Choice");
+    await setRootHeading(uid, `**{{[[TODO]]}} [[Choice]]:** ${choice}`);
+
+    const constraintsUid = await ensureSection(uid, "**Constraints:**", { order: 0 });
+    while (true) {
+        throwIfCancelled();
+        const constraints = await mustPrompt("What is one constraint?", 1, "Simple Choice");
+        await appendLine(constraintsUid, constraints);
+
+        const more = await mustPrompt("Are there any more constraints?", 3, "Simple Choice");
+        if (more !== "yes") break;
     }
 
-    let constraints = await prompt("What is one constraint?", 1, "Simple Choice");
-    var constraintsUID = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": newuid, order: order },
-        block: { string: constraints.toString(), uid: constraintsUID }
-    });
+    const optUID = await ensureSection(uid, "**Options:**", { order: 1 });
+    while (true) {
+        throwIfCancelled();
+        const options = await mustPrompt("What is one option?", 1, "Simple Choice");
+        await appendLine(optUID, options);
 
-    let more = await prompt("Are there any more constraints?", 3, "Simple Choice", null);
-    if (more == "yes") {
-        aot_choice_constraints(uid, newuid, focusedWindow);
-    } else if (more == "no") {
-        var optUID = window.roamAlphaAPI.util.generateUID();
-        await window.roamAlphaAPI.createBlock({
-            location: { "parent-uid": uid, order: 1 },
-            block: { string: "**Options:**".toString(), uid: optUID }
-        });
-        aot_choice_options(uid, optUID, focusedWindow);
-    }
-}
-async function aot_choice_options(uid, optUID, focusedWindow) {
-    let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${optUID}"] ]`);
-    var order = 0;
-    if (existingItems[0][0].hasOwnProperty("children")) {
-        order = existingItems[0][0].children.length;
+        const more = await mustPrompt("Are there any more options?", 3, "Simple Choice");
+        if (more !== "yes") break;
     }
 
-    let options = await prompt("What is one option?", 1, "Simple Choice")
-    var optionsUID = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": optUID, order: order },
-        block: { string: options.toString(), uid: optionsUID }
-    });
+    const decUID = await ensureSection(uid, "**Decision:**", { order: 2 });
+    await leaf(decUID, { order: 0, focus: true });
 
-    let more = await prompt("Are there any more options?", 3, "Simple Choice", null);
-    if (more == "yes") {
-        aot_choice_options(uid, optUID, focusedWindow);
-    } else if (more == "no") {
-        var decUID = window.roamAlphaAPI.util.generateUID();
-        await window.roamAlphaAPI.createBlock({
-            location: { "parent-uid": uid, order: 2 },
-            block: { string: "**Decision:**".toString(), uid: decUID }
-        });
-        aot_choice_decision(decUID, focusedWindow);
-    }
-}
-async function aot_choice_decision(decUID, focusedWindow) {
-    var decUID1 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": decUID, order: 0 },
-        block: { string: "", uid: decUID1 }
-    });
-
-    await window.roamAlphaAPI.ui.setBlockFocusAndSelection(
-        { location: { "block-uid": decUID1, "window-id": focusedWindow } })
-    await prompt("Look over your constraints and options, make your decision and record it here.", 4, "Simple Choice:", null, 4000);
+    await prompt(
+        "Look over your constraints and options, make your decision and record it here.",
+        4,
+        "Simple Choice:",
+        null,
+        4000
+    );
 }
 
-// TOSCA functions - complete
+// TOSCA
 async function aot_tosca(uid) {
-    await sleep(20);
-    await window.roamAlphaAPI.updateBlock(
-        { block: { uid: uid, string: "**TOSCA:**", open: true } });
+    throwIfCancelled();
+    forceCommitActiveEditor();
 
-    let trouble = await prompt("What are the symptoms that make this problem real and present? Be specific. Avoid interpretation or solution ideas. Ask: \"Why now?\"", 1, "TOSCA");
-    var troubleUID = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": uid, order: 0 },
-        block: { string: "Trouble: ", uid: troubleUID }
-    });
-    var troubleUID1 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": troubleUID, order: 0 },
-        block: { string: trouble.toString(), uid: troubleUID1 }
-    });
+    const trouble = await mustPrompt(
+        'What are the symptoms that make this problem real and present? Be specific. Avoid interpretation or solution ideas. Ask: "Why now?"',
+        1,
+        "TOSCA"
+    );
 
-    let owner = await prompt("Whose problem is this?", 1, "TOSCA");
-    var ownerUID = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": uid, order: 1 },
-        block: { string: "Owner: ", uid: ownerUID }
-    });
-    var ownerUID1 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": ownerUID, order: 0 },
-        block: { string: owner.toString(), uid: ownerUID1 }
-    });
+    await setRootHeading(uid, "[[TOSCA]]:");
 
-    let sc = await prompt("What will success look like, and by when? Include a quantified target if possible.", 1, "TOSCA");
-    var scUID = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": uid, order: 2 },
-        block: { string: "Success Criteria: ", uid: scUID }
-    });
-    var scUID1 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": scUID, order: 0 },
-        block: { string: sc.toString(), uid: scUID1 }
-    });
+    const troubleUID = await ensureSection(uid, "Trouble: ", { order: 0 });
+    await appendLine(troubleUID, trouble, 0);
 
-    var actorsUID = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": uid, order: 3 },
-        block: { string: "Actors: ", uid: actorsUID }
-    });
+    const owner = await mustPrompt("Whose problem is this?", 1, "TOSCA");
+    const ownerUID = await ensureSection(uid, "Owner: ", { order: 1 });
+    await appendLine(ownerUID, owner, 0);
 
-    aot_tosca_actors(uid, actorsUID)
-}
-async function aot_tosca_actors(uid, actorsUID) {
-    let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${actorsUID}"] ]`);
-    var order = 0;
-    if (existingItems[0][0].hasOwnProperty("children")) {
-        order = existingItems[0][0].children.length;
+    const sc = await mustPrompt("What will success look like, and by when? Include a quantified target if possible.", 1, "TOSCA");
+    const scUID = await ensureSection(uid, "Success Criteria: ", { order: 2 });
+    await appendLine(scUID, sc, 0);
+
+    const actorsUID = await ensureSection(uid, "Actors: ", { order: 3 });
+    while (true) {
+        throwIfCancelled();
+        const actors = await mustPrompt("Which other stakeholders have a say, and what do they want?", 1, "TOSCA");
+        await appendLine(actorsUID, actors);
+
+        const more = await mustPrompt("Are there any other stakeholders?", 3, "TOSCA");
+        if (more !== "yes") break;
     }
 
-    let actors = await prompt("Which other stakeholders have a say, and what do they want?", 1, "TOSCA");
-    var actorsUID1 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": actorsUID, order: order },
-        block: { string: actors.toString(), uid: actorsUID1 }
-    });
-
-    let more = await prompt("Are there any other stakeholders?", 3, "TOSCA", null);
-    if (more == "yes") {
-        aot_tosca_actors(uid, actorsUID);
-    } else if (more == "no") {
-        aot_tosca_coreQ(uid);
-    }
-}
-async function aot_tosca_coreQ(uid) {
-    let coreQ = await prompt("Now that you've considered the TOSCA items, what is the Core Question?", 1, "TOSCA");
-    var coreQUID = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": uid, order: 4 },
-        block: { string: "**Core Question:**", uid: coreQUID }
-    });
-
-    var coreQUID1 = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": coreQUID, order: 0 },
-        block: { string: coreQ.toString(), uid: coreQUID1 }
-    });
+    const coreQ = await mustPrompt("Now that you've considered the TOSCA items, what is the Core Question?", 1, "TOSCA");
+    const coreQUID = await ensureSection(uid, "**Core Question:**", { order: 4 });
+    await appendLine(coreQUID, coreQ, 0);
 }
 
-// Want, Impediment, Remedy functions - COMPLETE
+// Want, Impediment, Remedy
 async function aot_wir(uid) {
-    let want = await prompt("What do you want?", 1, "Want, Impediment, Remedy");
-    let string = "[[I want]] " + want.toString();
+    throwIfCancelled();
+    forceCommitActiveEditor();
 
-    await sleep(20);
-    await window.roamAlphaAPI.updateBlock(
-        { block: { uid: uid, string: string, open: true } });
+    const want = await mustPrompt("What do you want?", 1, "Want, Impediment, Remedy");
+    await setRootHeading(uid, `[[I want]] ${want}`);
 
-    let array = []
-    aot_wir_impediment(uid, array);
-}
-async function aot_wir_impediment(uid, array) {
-    let existingItems = await window.roamAlphaAPI.q(`[:find (pull ?page [:node/title :block/string :block/uid {:block/children ...} ]) :where [?page :block/uid "${uid}"] ]`);
-    var order = 0;
-    if (existingItems[0][0].hasOwnProperty("children")) {
-        order = existingItems[0][0].children.length;
+    const remedyUids = [];
+
+    while (true) {
+        throwIfCancelled();
+
+        const imp = await mustPrompt("What is an impediment to achieving this?", 1, "Want, Impediment, Remedy");
+        const impUID = window.roamAlphaAPI.util.generateUID();
+        await trackedCreateBlock(uid, "last", `Impediment: ${imp}`, impUID);
+
+        const rem = await mustPrompt("How can I remedy this impediment?", 1, "Want, Impediment, Remedy");
+        const remUID = window.roamAlphaAPI.util.generateUID();
+        await trackedCreateBlock(impUID, 0, `Remedy: ${rem}`, remUID);
+
+        remedyUids.push(remUID);
+
+        const more = await mustPrompt("Are there any more impediments?", 3, "Want, Impediment, Remedy");
+        if (more !== "yes") break;
     }
 
-    let imp = await prompt("What is an impediment to achieving this?", 1, "Want, Impediment, Remedy");
-    var impUID = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": uid, order: order },
-        block: { string: "Impediment: " + imp.toString(), uid: impUID }
-    });
-    let rem = await prompt("How can I remedy this impediment?", 1, "Want, Impediment, Remedy");
-    var remUID = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": impUID, order: 0 },
-        block: { string: "Remedy: " + rem.toString(), uid: remUID }
-    });
-    array.push(remUID)
-    let more = await prompt("Are there any more impediments?", 3, "Want, Impediment, Remedy");
-    if (more == "yes") {
-        aot_wir_impediment(uid, array);
-    } else if (more == "no") {
-        aot_wir_finish(uid, order, array);
+    const actUID = await ensureSection(uid, "Actions: ", { order: "last" });
+
+    for (let i = 0; i < remedyUids.length; i++) {
+        await appendLine(actUID, `((${remedyUids[i]}))`, i);
     }
 }
-async function aot_wir_finish(uid, order, array) {
-    order = order + 1;
-    var actUID = window.roamAlphaAPI.util.generateUID();
-    await window.roamAlphaAPI.createBlock({
-        location: { "parent-uid": uid, order: order },
-        block: { string: "Actions: ", uid: actUID }
-    });
 
-    if (array.length > 0) {
-        for (var i = 0; i < array.length; i++) {
-            var thisUID = window.roamAlphaAPI.util.generateUID();
-            await window.roamAlphaAPI.createBlock({
-                location: { "parent-uid": actUID, order: i },
-                block: { string: "((" + array[i].toString() + "))", uid: thisUID }
-            });
+// -------------------- OPV --------------------
+// (not registered in palette here, but kept correct if you re-enable later)
+// https://www.debono.com/de-bono-thinking-lessons-1/7.-OPV-lesson-plan
+
+async function aot_opv(uid) {
+    throwIfCancelled();
+
+    const situation = await mustPrompt("What is the situation?", 1, "Other People's Views");
+    await setRootHeading(uid, `**Situation:** ${situation}`);
+
+    const peopleUID = await ensureSection(uid, "{{table}}", { order: 0 });
+
+    while (true) {
+        throwIfCancelled();
+        const person = await mustPrompt("Who is affected by this?", 1, "Other People's Views");
+        const personUID = window.roamAlphaAPI.util.generateUID();
+        await trackedCreateBlock(peopleUID, "last", String(person), personUID);
+
+        const more = await mustPrompt("Are there other people affected?", 3, "Other People's Views");
+        if (more !== "yes") break;
+    }
+
+    // views
+    const existingItems = await window.roamAlphaAPI.q(
+        `[:find (pull ?page [:block/uid {:block/children [:block/uid :block/string]} ])
+          :where [?page :block/uid "${safeUid(peopleUID)}"] ]`
+    );
+
+    const table = existingItems?.[0]?.[0];
+    const people = table?.children || [];
+    if (!people.length) return;
+
+    for (let i = 0; i < people.length; i++) {
+        throwIfCancelled();
+
+        const person = people[i];
+        const name = person?.string || "this person";
+        const personUid = safeUid(person?.uid);
+        if (!personUid) continue;
+
+        while (true) {
+            throwIfCancelled();
+            const view = await mustPrompt(`How does ${name} view this situation?`, 1, "Other People's Views");
+            await appendLine(personUid, view);
+
+            const more = await mustPrompt("Do they have any other views?", 3, "Other People's Views");
+            if (more !== "yes") break;
         }
     }
 }
 
-// helper functions
+// -------------------- PROMPT --------------------
 
-async function prompt(string, type, title, selectString, timer) {
-    if (type == 1) { // input
+async function prompt(message, type, title, selectString, timer) {
+    // one-shot resolver guard (prevents double-resolve)
+    const once = (resolve) => {
+        let done = false;
+        return (v) => {
+            if (done) return;
+            done = true;
+            resolve(v);
+        };
+    };
+
+    // Central cancel handler
+    const cancel = (done) => {
+        markCancelled();
+        done(null);
+    };
+
+    const toastId = `aot-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+    // ---------- type 1: input ----------
+    if (type === 1) {
         return new Promise((resolve) => {
+            const done = once(resolve);
+
             iziToast.question({
-                theme: 'dark', // dark
-                color: '', // blue, red, green, yellow
+                theme: "dark",
+                color: "",
                 layout: 2,
                 drag: false,
                 timeout: false,
                 close: false,
                 overlay: true,
+                overlayClose: true,
+                closeOnEscape: true,
                 displayMode: 2,
-                id: "question",
-                title: title,
-                message: string,
+                id: toastId,
+                title,
+                message,
                 position: "center",
                 inputs: [
                     [
@@ -1630,7 +1979,7 @@ async function prompt(string, type, title, selectString, timer) {
                         function (instance, toast, input, e) {
                             if (e.code === "Enter") {
                                 instance.hide({ transitionOut: "fadeOut" }, toast, "button");
-                                resolve(e.srcElement.value);
+                                done(input.value);
                             }
                         },
                         true,
@@ -1639,206 +1988,178 @@ async function prompt(string, type, title, selectString, timer) {
                 buttons: [
                     [
                         "<button><b>Confirm</b></button>",
-                        async function (instance, toast, button, e, inputs) {
+                        function (instance, toast, button, e, inputs) {
                             instance.hide({ transitionOut: "fadeOut" }, toast, "button");
-                            resolve(inputs[0].value);
+                            done(inputs?.[0]?.value ?? "");
                         },
                         false,
                     ],
                     [
                         "<button>Cancel</button>",
-                        async function (instance, toast, button, e) {
+                        function (instance, toast) {
                             instance.hide({ transitionOut: "fadeOut" }, toast, "button");
+                            cancel(done);
                         },
                     ],
                 ],
-                onClosing: function (instance, toast, closedBy) { },
-                onClosed: function (instance, toast, closedBy) { },
+                onClosed: function (instance, toast, closedBy) {
+                    if (closedBy === "esc" || closedBy === "overlay") cancel(done);
+                },
             });
-        })
-    } else if (type == 2) { // select
+        });
+    }
+
+    // ---------- type 2: select ----------
+    if (type === 2) {
         return new Promise((resolve) => {
+            const done = once(resolve);
+
             iziToast.question({
-                theme: 'dark', // dark
-                color: '', // blue, red, green, yellow
+                theme: "dark",
+                color: "",
                 layout: 2,
                 drag: false,
                 timeout: false,
                 close: false,
                 overlay: true,
-                title: title,
-                message: string,
-                position: 'center',
-                inputs: [
-                    [selectString, 'change', function (instance, toast, select, e) { }]
-                ],
+                overlayClose: true,
+                closeOnEscape: true,
+                id: toastId,
+                title,
+                message,
+                position: "center",
+                inputs: [[selectString, "change", function () { }]],
                 buttons: [
-                    ['<button><b>Confirm</b></button>', function (instance, toast, button, e, inputs) {
-                        instance.hide({ transitionOut: 'fadeOut' }, toast, 'button');
-                        resolve(inputs[0].options[inputs[0].selectedIndex].value);
-                    }, false], // true to focus
+                    [
+                        "<button><b>Confirm</b></button>",
+                        function (instance, toast, button, e, inputs) {
+                            instance.hide({ transitionOut: "fadeOut" }, toast, "button");
+                            const sel = inputs?.[0];
+                            const value =
+                                sel && sel.options && sel.selectedIndex >= 0 ? sel.options[sel.selectedIndex].value : "";
+                            done(value);
+                        },
+                        false,
+                    ],
                     [
                         "<button>Cancel</button>",
-                        function (instance, toast, button, e) {
+                        function (instance, toast) {
                             instance.hide({ transitionOut: "fadeOut" }, toast, "button");
+                            cancel(done);
                         },
                     ],
-                ]
+                ],
+                onClosed: function (instance, toast, closedBy) {
+                    if (closedBy === "esc" || closedBy === "overlay") cancel(done);
+                },
             });
-        })
-    } else if (type == 3) { // yes/no
+        });
+    }
+
+    // ---------- type 3: yes/no ----------
+    if (type === 3) {
         return new Promise((resolve) => {
+            const done = once(resolve);
+
             iziToast.question({
-                theme: 'dark', // dark
-                color: '', // blue, red, green, yellow
+                theme: "dark",
+                color: "",
                 layout: 2,
                 drag: false,
                 timeout: false,
                 close: false,
                 overlay: true,
+                overlayClose: true,
+                closeOnEscape: true,
                 displayMode: 2,
-                id: "question",
-                title: title,
-                message: string,
+                id: toastId,
+                title,
+                message,
                 position: "center",
                 buttons: [
                     [
                         "<button>Yes</button>",
-                        async function (instance, toast, button, e) {
+                        function (instance, toast) {
                             instance.hide({ transitionOut: "fadeOut" }, toast, "button");
-                            resolve("yes");
+                            done("yes");
                         },
                         false,
                     ],
                     [
                         "<button>No</button>",
-                        async function (instance, toast, button, e) {
+                        function (instance, toast) {
                             instance.hide({ transitionOut: "fadeOut" }, toast, "button");
-                            resolve("no");
+                            done("no");
+                        },
+                    ],
+                    [
+                        "<button>Cancel</button>",
+                        function (instance, toast) {
+                            instance.hide({ transitionOut: "fadeOut" }, toast, "button");
+                            cancel(done);
                         },
                     ],
                 ],
-                onClosing: function (instance, toast, closedBy) { },
-                onClosed: function (instance, toast, closedBy) { },
+                onClosed: function (instance, toast, closedBy) {
+                    if (closedBy === "esc" || closedBy === "overlay") cancel(done);
+                },
             });
-        })
-    } else if (type == 4) { // toast
-        return new Promise((resolve) => {
-            iziToast.show({
-                id: null,
-                class: '',
-                title: title,
-                titleColor: '',
-                titleSize: '',
-                titleLineHeight: '',
-                message: string,
-                messageColor: '',
-                messageSize: '',
-                messageLineHeight: '',
-                backgroundColor: '',
-                theme: 'dark', // dark
-                color: '', // blue, red, green, yellow
-                icon: '',
-                iconText: '',
-                iconColor: '',
-                iconUrl: null,
-                image: '',
-                imageWidth: 50,
-                maxWidth: null,
-                zindex: null,
-                layout: 1,
-                balloon: false,
-                close: true,
-                closeOnEscape: true,
-                closeOnClick: true,
-                displayMode: 0, // once, replace
-                position: 'center', // bottomRight, bottomLeft, topRight, topLeft, topCenter, bottomCenter, center
-                target: '',
-                targetFirst: true,
-                timeout: timer,
-                rtl: false,
-                animateInside: true,
-                drag: true,
-                pauseOnHover: true,
-                resetOnHover: false,
-                progressBar: true,
-                progressBarColor: '',
-                progressBarEasing: 'linear',
-                overlay: false,
-                overlayClose: false,
-                overlayColor: 'rgba(0, 0, 0, 0.6)',
-                transitionIn: 'fadeInUp',
-                transitionOut: 'fadeOut',
-                transitionInMobile: 'fadeInUp',
-                transitionOutMobile: 'fadeOutDown',
-                buttons: {},
-                inputs: {},
-                onOpening: function () { },
-                onOpened: function () { },
-                onClosing: function () { },
-                onClosed: function () { resolve("completed cycle"); }
-            });
-        })
-    } else if (type == 5) { // brainstorming
-        return new Promise((resolve) => {
-            iziToast.show({
-                id: null,
-                class: '',
-                title: title,
-                titleColor: '',
-                titleSize: '',
-                titleLineHeight: '',
-                message: string,
-                messageColor: '',
-                messageSize: '',
-                messageLineHeight: '',
-                backgroundColor: '',
-                theme: 'dark', // dark
-                color: '', // blue, red, green, yellow
-                icon: '',
-                iconText: '',
-                iconColor: '',
-                iconUrl: null,
-                image: '',
-                imageWidth: 50,
-                maxWidth: null,
-                zindex: null,
-                layout: 1,
-                balloon: false,
-                close: true,
-                closeOnEscape: true,
-                closeOnClick: true,
-                displayMode: 0, // once, replace
-                position: 'bottomRight', // bottomRight, bottomLeft, topRight, topLeft, topCenter, bottomCenter, center
-                target: '',
-                targetFirst: true,
-                timeout: timer,
-                rtl: false,
-                animateInside: true,
-                drag: true,
-                pauseOnHover: true,
-                resetOnHover: false,
-                progressBar: true,
-                progressBarColor: '',
-                progressBarEasing: 'linear',
-                overlay: false,
-                overlayClose: false,
-                overlayColor: 'rgba(0, 0, 0, 0.6)',
-                transitionIn: 'fadeInUp',
-                transitionOut: 'fadeOut',
-                transitionInMobile: 'fadeInUp',
-                transitionOutMobile: 'fadeOutDown',
-                buttons: {},
-                inputs: {},
-                onOpening: function () { },
-                onOpened: function () { },
-                onClosing: function () { },
-                onClosed: function () { resolve("completed cycle"); }
-            });
-        })
+        });
     }
-}
 
-async function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    // ---------- type 4: toast ----------
+    if (type === 4) {
+        return new Promise((resolve) => {
+            iziToast.show({
+                title,
+                message,
+                theme: "dark",
+                layout: 1,
+                close: true,
+                closeOnEscape: true,
+                closeOnClick: true,
+                displayMode: 0,
+                position: "center",
+                timeout: timer,
+                progressBar: true,
+                overlay: false,
+                transitionIn: "fadeInUp",
+                transitionOut: "fadeOut",
+                transitionInMobile: "fadeInUp",
+                transitionOutMobile: "fadeOutDown",
+                onClosed: function () {
+                    resolve("completed cycle");
+                },
+            });
+        });
+    }
+
+    // ---------- type 5: brainstorming toast ----------
+    if (type === 5) {
+        return new Promise((resolve) => {
+            iziToast.show({
+                title,
+                message,
+                theme: "dark",
+                layout: 1,
+                close: true,
+                closeOnEscape: true,
+                closeOnClick: true,
+                displayMode: 0,
+                position: "bottomRight",
+                timeout: timer,
+                progressBar: true,
+                overlay: false,
+                transitionIn: "fadeInUp",
+                transitionOut: "fadeOut",
+                transitionInMobile: "fadeInUp",
+                transitionOutMobile: "fadeOutDown",
+                onClosed: function () {
+                    resolve("completed cycle");
+                },
+            });
+        });
+    }
+
+    return null;
 }

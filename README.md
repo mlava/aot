@@ -1,28 +1,74 @@
 At the dawn of time, there was a lot of fuss about using Roam Research to augment thinking and decision-making with semi-automated algorithms of thought. Now, they are available via your Command Palette or RR Hotkeys.
 
-Available Algorithms of Thought (AOT):
-- Agreement, Disagreement and Irrelevance
-- Alternatives, Possibilities, Choices
-- Assumptions X-Ray
-- Basic Decision
-- Consider All Factors
-- Difference Engine
-- Next Action
-- Simple Choice
-- Plus, Minus and Interesting
-- TOSCA
-- Want, Impediment, Remedy
+**NEW:**
+- drastically rewritten for robustness and safety
+- added 11 new AOTs:
+  - Aims, Goals, Objectives
+  - Consequence and Sequel
+  - Design/Decision, Outcome, Channels, Action (DODCA)
+  - Examine Both Sides
+  - First Important Priorities
+  - Five Whys
+  - Recognise, Analyse, Divide
+  - Regret Minimisation
+  - Right to Disagree
+  - Six Thinking Hats
+  - SWOT Analysis
 
-Coming Soon:
+All of the Algorithms can be accessed by the Command Palette and Roam Research hotkeys can be assigned. Further, you can trigger using SmartBlocks flows using the SmartBlock command listed below each item in the list below.
+
+The full list of available Algorithms of Thought (AOT) includes:
+- Aims, Goals, Objectives
+  - SmartBlocks command: <%AOTAGO%>
+- Agreement, Disagreement and Irrelevance
+  - SmartBlocks command: <%AOTADI%>
+- Alternatives, Possibilities, Choices
+  - SmartBlocks command: <%AOTAPC%>
+- Assumptions X-Ray
+  - SmartBlocks command: <%AOTAX%>
+- Basic Decision
+  - SmartBlocks command: <%AOTBASICDECISION%>
 - Consequence and Sequel
+  - SmartBlocks command: <%AOTCS%>
+- Consider All Factors
+  - SmartBlocks command: <%AOTCAF%>
+- Design/Decision, Outcome, Channels, Action (DODCA)
+  - SmartBlocks command: <%AOTDODCA%>
+- Difference Engine
+  - SmartBlocks command: <%AOTDIFFERENCE%>
+- Examine Both Sides
+  - SmartBlocks command: <%AOTEBS%>
 - First Important Priorities
+  - SmartBlocks command: <%AOTFIP%>
+- Five Whys
+  - SmartBlocks command: <%AOTFIVEWHYS%>
+- Next Action
+  - SmartBlocks command: <%AOTNEXTACTION%>
+- Plus, Minus and Interesting
+  - SmartBlocks command: <%AOTPMI%>
+- Recognise, Analyse, Divide
+  - SmartBlocks command: <%AOTRAD%>
+- Regret Minimisation
+  - SmartBlocks command: <%AOTREGRET%>
+- Right to Disagree
+  - SmartBlocks command: <%AOTRTD%>
+- Simple Choice
+  - SmartBlocks command: <%AOTCHOICE%>
+- Six Thinking Hats
+  - SmartBlocks command: <%AOTSIXHATS%>
+- SWOT Analysis
+  - SmartBlocks command: <%AOTSWOT%>
+- TOSCA
+  - SmartBlocks command: <%AOTTOSCA%>
+- Want, Impediment, Remedy
+  - SmartBlocks command: <%AOTWANT%>
+
+Still to come:
 - Issue Log
 - Other People's Views
 - Pain Button
 - REALLY?
 - REAPPRAISED
-- Regret Minimisation
-- Right to Disagree
 
 There is a lot of previous work in this space, especially from when Roam42 SmartBlocks were first created. There is a public archive of early SmartBlocks available which features of many of these AOT at https://github.com/dvargas92495/SmartBlocks/issues.
 
