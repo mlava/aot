@@ -227,7 +227,7 @@ Use this when the task is *appraisal, not decision*:
 
 ### “If you’re stuck executing → Ultraworking”
 
-Install my Ultraworking extension to enhance execution (Roam Depot).
+Install the Ultraworking extension to enhance execution (Roam Depot).
 
 ### “If you’re stuck creatively → Oblique Strategies”
 
