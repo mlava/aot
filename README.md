@@ -225,6 +225,15 @@ Use this when the task is *appraisal, not decision*:
 - **REALLY?** – fast claim appraisal
 - **REAPPRAISED Checklist** – systematic source and evidence evaluation
 
+### “If you’re stuck executing → Ultraworking”
+
+Install my Ultraworking extension to enhance execution (Roam Depot).
+
+### “If you’re stuck creatively → Oblique Strategies”
+
+Install the Oblique Strategies extension via Roam Depot to conquer creative block.
+
+
 A Useful Rule of Thumb:
 - If you’re *confused* → diagnose
 - If you’re *choosing* → decide
@@ -237,8 +246,16 @@ Algorithms of Thought work best when you **name the thinking problem first**.
 ---
 
 ## Coming Soon
+- Circle of Control
+- Claim, Evidence, Confidence
+- Constraints First
 - Issue Log
 - Other People’s Views
+- Pre-Mortem
+- Stakeholder Mapping
+- Steelman Analysis
+
+You can request additional AOTs via the Roam Research Slack channel.
 
 ---
 
