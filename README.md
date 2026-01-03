@@ -61,15 +61,29 @@ Below is the full set of available AOTs, grouped by what kind of thinking they s
 - **Aims, Goals, Objectives**
   - Clarifies high-level intent vs concrete objectives.
   - `<%AOTAGO%>`
-- **First Important Priorities** `<%AOTFIP%>`
-- **Next Action** `<%AOTNEXTACTION%>`
+- **First Important Priorities**
+  - Forces ranking when everything feels important.
+  - `<%AOTFIP%>`
+- **Next Action**
+  - Converts vague intent into a concrete, doable step.
+  - `<%AOTNEXTACTION%>`
 
 ### ⚖️ Decision-Making & Trade-offs
-- **Basic Decision** `<%AOTBASICDECISION%>`
-- **Simple Choice** `<%AOTCHOICE%>`
-- **Alternatives, Possibilities, Choices** `<%AOTAPC%>`
-- **Regret Minimisation** `<%AOTREGRET%>`
-- **Design / Decision, Outcome, Channels, Action (DODCA)** `<%AOTDODCA%>`
+- **Basic Decision**
+  - A simple, minimal decision scaffold.
+  - `<%AOTBASICDECISION%>`
+- **Simple Choice**
+  - Lightweight comparison when complexity is low.
+  - `<%AOTCHOICE%>`
+- **Alternatives, Possibilities, Choices**
+  - Expands option space before narrowing.
+  - `<%AOTAPC%>`
+- **Regret Minimisation**
+  - Evaluates choices based on long-term regret.
+  - `<%AOTREGRET%>`
+- **Design / Decision, Outcome, Channels, Action (DODCA)**
+  - Forces alignment between decisions and execution.
+  - `<%AOTDODCA%>`
 
 ### 🔍 Critical Thinking & Challenge
 - **Assumptions X-Ray** `<%AOTAX%>`
