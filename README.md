@@ -3,10 +3,10 @@
 
 Algorithms of Thought (AOT) is a Roam Research extension that provides **structured thinking scaffolds** — lightweight, repeatable prompts that help you reason more clearly about decisions, problems, trade-offs, and next actions.
 
-AOTs are **not automation** and **not AI**. They are intentional cognitive tools: small, named thinking patterns that you can invoke exactly when you need them.
+AOTs are **not automation** and **not AI**. They are intentional cognitive tools: small, named thinking patterns that you can invoke exactly when you need them. Their value is obtained through structured thought, not by having the thinking done for you.
 
 You can trigger AOTs via:
-- The **Command Palette**
+- **Command Palette**
 - **Roam hotkeys**
 - **SmartBlocks flows**
 
