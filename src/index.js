@@ -1482,14 +1482,17 @@ async function aot_pain_button(uid) {
 
     // ---- Emotion (select, with Other fallback) ----
     const EMOTIONS = [
+        "Anger",
         "Disappointment",
-        "Frustration",
-        "Embarrassment",
-        "Stress",
         "Disrespect",
-        "Nervousness",
-        "Worry",
+        "Embarrassment",
+        "Fear",
+        "Frustration",
         "Insecurity",
+        "Nervousness",
+        "Sadness",
+        "Stress",
+        "Worry",
         "Other",
     ];
 
@@ -1618,16 +1621,16 @@ async function aot_really(uid) {
     throwIfCancelled();
     forceCommitActiveEditor();
 
-    const ctx = getCtx();
-    await detachEditorFromBlockThenWrite(uid, ctx?.windowId || runtime.focusedWindow, async () => {
-        await trackedUpdateBlock(uid, "REALLY?::", true);
-    });
-
     const claim = await mustPrompt(
         "What statement, belief, or assumption are you questioning?",
         1,
         "REALLY?"
     );
+    
+    const ctx = getCtx();
+    await detachEditorFromBlockThenWrite(uid, ctx?.windowId || runtime.focusedWindow, async () => {
+        await trackedUpdateBlock(uid, "REALLY?::", true);
+    });
     const claimSec = await ensureSection(uid, "**Claim:**");
     await appendLine(claimSec, claim);
 
@@ -1679,21 +1682,16 @@ async function aot_reappraised(uid) {
     throwIfCancelled();
     forceCommitActiveEditor();
 
-    const ctx = getCtx();
-    await detachEditorFromBlockThenWrite(
-        uid,
-        ctx?.windowId || runtime.focusedWindow,
-        async () => {
-            await trackedUpdateBlock(uid, "REAPPRAISED::", true);
-        }
-    );
-
     const paper = await mustPrompt(
         "What paper, preprint, or study are you evaluating?",
         1,
         "REAPPRAISED"
     );
 
+    const ctx = getCtx();
+    await detachEditorFromBlockThenWrite(uid, ctx?.windowId || runtime.focusedWindow, async () => {
+        await trackedUpdateBlock(uid, "REAPPRAISED::", true);
+    });
     const root = await ensureSection(uid, "**Paper under review:**");
     await appendLine(root, paper);
 

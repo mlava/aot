@@ -246,11 +246,16 @@ Algorithms of Thought work best when you **name the thinking problem first**.
 ---
 
 ## Coming Soon
+- After Action Review
 - Circle of Control
 - Claim, Evidence, Confidence
+- Claim–Evidence–Warrant
+- Constraint–Bottleneck–Relief
 - Constraints First
+- Evidence Hierarchy Check
 - Issue Log
 - Other People’s Views
+- PDSA
 - Pre-Mortem
 - Stakeholder Mapping
 - Steelman Analysis
